@@ -32,6 +32,9 @@ from bayesian_stats import (
 )
 ```
 
+# Example
+
+
 - Suppose we have a model to represent the distribution of  year-over-year % change in total personnel for companies from a given industry:
 	- `y | mu, sigma ~ N(loc=mu, scale=sigma)`
 	- This model for `y` ( the distribution of percentage change for companies in the industry) can be modeled as a normal distribution with unknown:
@@ -49,10 +52,14 @@ from bayesian_stats import (
     - `P(sigma_1 | mu_1, y1, ..., y10) ∝ PRODUCT(Normal(mu_1, sigma_0).pdf(yi), for yi in Y[1:10]) * P(mu_1) * P(sigma_1)`
 		- If we assume all the companies are i.i.d. then the likelihood is the product of all 10 likelihoods of the company
 
+
+## Observed data
+
 ```python
-# observed data
 y = np.array([1.2, 1.4, -0.5, 0.3, 0.9, 2.3, 1.0, 0.1, 1.3, 1.9])
 ```
+
+# Priors
 
 ```python
 # Mu prior params
@@ -63,6 +70,8 @@ print(mu_priors)
 sigma_priors = get_invgamma_params(sigma_prior=1, effective_sample_size=2)
 print(sigma_priors)
 ```
+
+## MCMC Model
 
 ```python
 # Number of chains
@@ -87,6 +96,8 @@ with pymc.Model() as model:
 ```python
 pymc.model_to_graphviz(model)
 ```
+
+## Posterior analysis
 
 ```python
 mu = np.array(idata.posterior.mu)
@@ -127,12 +138,4 @@ bins = np.linspace(-1, 3, 100)
 for i, chain in enumerate(mu):
     ax.hist(chain, bins=bins, density=True, alpha=0.5, label=f"chain {i + 1}")
 _ = ax.legend()
-```
-
-```python
-!conda install -c conda-forge python-graphviz
-```
-
-```python
-
 ```
