@@ -1,5 +1,7 @@
 from os import path
 
+from bayesian_stats.functions import *
+
 
 ROOT_DIR = path.dirname(path.abspath(__file__))
 
