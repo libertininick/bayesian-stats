@@ -89,7 +89,7 @@ with pymc.Model() as model:
     # Likelihood (sampling distribution) of observations
     y_obs = pymc.Normal("y_obs", mu=mu, sigma=sigma, observed=y)
     
-    # draw 1000 posterior samples
+    # draw posterior samples
     idata = pymc.sample(draws=draws, chains=chains)
 ```
 
