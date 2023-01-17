@@ -26,7 +26,8 @@ conda create -y -n bayesian_stats \
     python=3.10 \
     python-dotenv \
     python-graphviz \
-    scipy
+    scipy \
+    statsmodels
 
 # Activate bayesian_stats env
 conda activate bayesian_stats
