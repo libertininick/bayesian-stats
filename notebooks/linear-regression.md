@@ -19,11 +19,12 @@ import os
 from pathlib import Path
 from typing import Tuple, Union
 
+import arviz as az
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pymc
+import pymc as pm
 import statsmodels.api as sm
 from dotenv import load_dotenv
 from numpy import ndarray
@@ -88,20 +89,37 @@ print(sigma_prior_params)
 ### Model specification
 
 ```python
-with pymc.Model() as lm:
+with pm.Model() as lm:
     # Priors for unknown model parameters
-    betas = pymc.Normal("betas", **betas_prior_params, shape=2)
-    sigma = pymc.InverseGamma("sigma", **sigma_prior_params)
+    betas = pm.Normal("betas", **betas_prior_params, shape=2)
+    sigma = pm.InverseGamma("sigma", **sigma_prior_params)
 
     # Expected value of outcome
     mu = betas[0] + betas[1] * data.log_income
 
     # Likelihood (sampling distribution) of observations
-    y = pymc.Normal("y", mu=mu, sigma=sigma, observed=data.log_infant)
+    y = pm.Normal("y", mu=mu, sigma=sigma, observed=data.log_infant)
+    
+lm
 ```
 
 ```python
-pymc.model_to_graphviz(lm)
+pm.model_to_graphviz(lm)
+```
+
+### prior predictive
+
+```python
+RANDOM_SEED = 58
+rng = np.random.default_rng(RANDOM_SEED)
+with lm:
+    trace_prior = pm.sample_prior_predictive(samples=1000, random_seed=rng)
+```
+
+```python
+fig, ax = plt.subplots(figsize=(10,5))
+_ = ax.hist(trace_prior.prior_predictive.y[0, :, 0], bins=30)
+_ = ax.axvline(x=data.log_infant[0], color="red")
 ```
 
 ### Model fitting
@@ -115,7 +133,27 @@ draws = 5000
 
 with lm:
     # draw posterior samples
-    idata = pymc.sample(draws=draws, chains=chains)
+    trace_posterior = pm.sample(draws=draws, chains=chains)
+    trace_posterior = pm.sample_posterior_predictive(trace_posterior, extend_inferencedata=True, random_seed=rng)
+```
+
+```python
+az.summary(trace_posterior)
+```
+
+```python
+az.plot_trace(trace_posterior, combined=True)
+```
+
+```python
+az.plot_forest(trace_posterior, var_names=["betas"], combined=True, hdi_prob=0.95, r_hat=True)
+```
+
+```python
+
+fig, ax = plt.subplots(figsize=(10,5))
+_ = ax.hist(trace_posterior.posterior_predictive.y[0, :, 0], bins=30)
+_ = ax.axvline(x=data.log_infant[0], color="red")
 ```
 
 <!-- #region heading_collapsed=true -->
@@ -214,11 +252,11 @@ ax.legend()
 ### Model specification
 
 ```python
-with pymc.Model() as lm1:
+with pm.Model() as lm1:
     # Priors for unknown model parameters
-    betas = pymc.Normal("betas", **betas_prior_params, shape=2)
-    sigma = pymc.InverseGamma("sigma", **sigma_prior_params)
-    df = pymc.Exponential("df", **df_prior_params)
+    betas = pm.Normal("betas", **betas_prior_params, shape=2)
+    sigma = pm.InverseGamma("sigma", **sigma_prior_params)
+    df = pm.Exponential("df", **df_prior_params)
 
     # Expected value of outcome
     mu = betas[0] + betas[1] * data.log_income
@@ -226,15 +264,13 @@ with pymc.Model() as lm1:
     
 
     # Likelihood (sampling distribution) of observations
-    y = pymc.StudentT("y", mu=mu, sigma=sigma, nu=nu, observed=data.log_infant)
+    y = pm.StudentT("y", mu=mu, sigma=sigma, nu=nu, observed=data.log_infant)
     
-#     # Add log likelhood to model ouput
-#     llk = pymc.Deterministic("log_likehood", lm1.logp)
 lm1
 ```
 
 ```python
-pymc.model_to_graphviz(lm1)
+pm.model_to_graphviz(lm1)
 ```
 
 ### Model fitting
@@ -248,7 +284,7 @@ draws = 5000
 
 with lm1:
     # draw posterior samples
-    idata = pymc.sample(draws=draws, chains=chains)
+    idata = pm.sample(draws=draws, chains=chains)
 ```
 
 ```python
@@ -310,22 +346,22 @@ print(sigma_prior_params)
 ```
 
 ```python
-with pymc.Model() as lm2:
+with pm.Model() as lm2:
     # Priors
-    betas = pymc.Normal("betas", **betas_prior_params, shape=3+1)
-    sigma = pymc.InverseGamma("sigma", **sigma_prior_params, shape=1)
+    betas = pm.Normal("betas", **betas_prior_params, shape=3+1)
+    sigma = pm.InverseGamma("sigma", **sigma_prior_params, shape=1)
     
     # Expected value of outcome
     mu = betas[0] + data[['income', 'young', 'urban']].values @ betas[1:]
 
     # Likelihood (sampling distribution) of observations
-    y = pymc.Normal("y", mu=mu, sigma=sigma, observed=data.education)
+    y = pm.Normal("y", mu=mu, sigma=sigma, observed=data.education)
     
 lm2
 ```
 
 ```python
-pymc.model_to_graphviz(lm2)
+pm.model_to_graphviz(lm2)
 ```
 
 ```python
@@ -337,7 +373,7 @@ draws = 5000
 
 with lm2:
     # draw posterior samples
-    idata = pymc.sample(draws=draws, chains=chains)
+    idata = pm.sample(draws=draws, chains=chains)
     
 az.summary(idata)
 ```
