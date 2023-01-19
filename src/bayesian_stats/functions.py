@@ -70,7 +70,7 @@ def get_effective_sample_size(
 
     Parameters
     ----------
-    chain: ndarray, shape=(2*N,)
+    chain: ndarray, shape=(N,)
         Posterior MCMC samples for a given model parameter for a single chain.
     lags: int
         Number of auto-correlation lags.
@@ -84,8 +84,9 @@ def get_effective_sample_size(
     """
 
     # Discard the first x% of samples (burn-in period)
-    n = int(len(chain) * burn_in_frac)
-    chain = chain[n:]
+    n = len(chain)
+    st = int(n * burn_in_frac)
+    chain = chain[st:]
 
     # Calc auto-corr lags
     auto_corr = get_auto_corr(chain, lags=np.arange(1, lags))
@@ -95,6 +96,7 @@ def get_effective_sample_size(
 
     # Scale number of samples down by scale factor
     scale_factor = 1 / (1 + 2 * (auto_corr[:lag_idx].sum()))
+
     effective_sample_size = n * scale_factor
 
     return effective_sample_size
