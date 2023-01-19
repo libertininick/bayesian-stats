@@ -8,6 +8,7 @@ __all__ = [
     "get_auto_corr",
     "get_effective_sample_size",
     "get_gelman_rubin_diagnostic",
+    "get_highest_density_interval",
     "get_invgamma_params",
 ]
 
@@ -157,6 +158,84 @@ def get_gelman_rubin_diagnostic(chains: ndarray, burn_in_frac: float = 0.5) -> f
     scale_reduction_factor = (est_var / w) ** 0.5
 
     return scale_reduction_factor
+
+
+def get_highest_density_interval(
+    x: ndarray, confidence_level: float = 0.95, axis: Union[int, None] = None
+) -> ndarray:
+    """Highest Posterior Density credible interval (HDI)
+
+    Parameters
+    ----------
+    x: ndarray
+        Posterior samples.
+    confidence_level: float, optional
+        Confidence level for credible interval.
+    axis: int, optional
+        Axis to summarize HDI for.
+        If ``None``, will flatten data and summarize over all.
+
+    Examples
+    --------
+    MCMC samples, 5 chains, 1000 samples, 3 variables
+    >>> x = np.random.randn(5, 1000, 3)
+
+    90% HDI for all three variables across samples from all 5 chains
+    >>> get_highest_density_interval(x, 0.9, -1)
+    array([[-1.63800563,  1.57380441],
+       [-1.5237949 ,  1.6969538 ],
+       [-1.6280908 ,  1.55021882]])
+
+    90% HDI for first variable for each of the 5 chains
+    >>> get_highest_density_interval(x[..., 0], 0.9, 0)
+    array([[-1.46058406,  1.7732467 ],
+       [-1.62641322,  1.45060484],
+       [-1.67931087,  1.64607491],
+       [-1.66882088,  1.48132977],
+       [-1.64907721,  1.52750428]])
+
+
+    Notes
+    -----
+    - The Highest Posterior Density credible interval is the shortest interval
+    on a posterior density for some given confidence level.
+    """
+    if axis is None:
+        axis = -1
+        x = x.flatten()[:, None]
+
+    if axis == -1:
+        axis = x.ndim - 1
+
+    # Reshape input to 2D:
+    # x -> (samples, summary axis)
+    axes = np.arange(x.ndim)
+    shape = x.shape
+    mask = axes == axis
+    t_axes = np.concatenate((axes[~mask], axes[mask]))
+    x = x.transpose(t_axes).reshape(-1, shape[axis])
+
+    # Number of samples
+    n = x.shape[0]
+    ni = int(n * confidence_level)
+
+    # Sort samples
+    x = np.sort(x, axis=0)
+
+    # Find shortest interval overall all possible intervals
+    interval_lens = x[ni:, :] - x[:-ni, :]
+    min_interval_idxs = np.argmin(interval_lens, axis=0)
+
+    # Get lhs, rhs of intervals
+    idxs = np.arange(n)
+    lhs_idxs = idxs[:-ni]
+    rhs_idxs = idxs[ni:]
+    lhs = np.take_along_axis(x, lhs_idxs[None, min_interval_idxs], axis=0)
+    rhs = np.take_along_axis(x, rhs_idxs[None, min_interval_idxs], axis=0)
+
+    credible_intervals = np.vstack((lhs, rhs)).T
+    assert credible_intervals.shape == (shape[axis], 2)
+    return credible_intervals
 
 
 def get_invgamma_params(
