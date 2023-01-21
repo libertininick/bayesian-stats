@@ -1,6 +1,7 @@
 from typing import Dict, Iterable, Union
 
 import numpy as np
+import pandas as pd
 from numpy import ndarray
 
 
@@ -261,3 +262,37 @@ def get_invgamma_params(
         alpha=effective_sample_size / 2.0,
         beta=sigma_prior * effective_sample_size / 2.0,
     )
+
+
+def one_hot_encode(x: Union[pd.Series, ndarray], var_name: str = None) -> pd.DataFrame:
+    """One-hot-encode a categorical variable
+
+    Parameters
+    ----------
+    x: Union[pd.Series, ndarray], shape=(N,)
+        Categorical variable to one-hot-encode
+    var_name: str, optional
+        Original name of variable
+        (default = None)
+
+    Returns
+    -------
+    one_hot_encoding: pd.DataFrame, shape=(N, M)
+        One-hot-encoded variable with M levels.
+    """
+    if var_name is None:
+        if isinstance(x, pd.Series):
+            var_name = x.name
+        else:
+            var_name = ""
+
+    if isinstance(x, pd.Series):
+        x = x.values
+
+    levels = np.unique(x)
+
+    ohe = x.reshape(-1, 1)[..., None] == levels.reshape(1, -1)[None]
+    df_ohe = pd.DataFrame(
+        data=ohe.all(1).astype(float), columns=[f"{var_name}_{lvl}" for lvl in levels]
+    )
+    return df_ohe
