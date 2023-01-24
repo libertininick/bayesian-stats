@@ -76,7 +76,7 @@ x_norm = (x - means) / stds
 means
 ```
 
-## Logit Model
+## Default Reference Logit Model
 
 ```python
 logit_model = sm.Logit(data.r.values, x_norm)

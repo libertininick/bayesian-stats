@@ -323,7 +323,7 @@ axs[1].scatter(data.young, data.education)
 axs[2].scatter(data.urban, data.education)
 ```
 
-## Odinary least squares regression
+## Default Reference odinary least squares regression
 
 ```python
 X = sm.add_constant(data[['income', 'young', 'urban']])

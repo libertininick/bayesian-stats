@@ -76,7 +76,7 @@ x = x.all(1).astype(float)
 x.shape
 ```
 
-## OLS Model
+## Default Reference OLS Model
 
 ```python
 ols_model = sm.OLS(data.weight.values, x)
