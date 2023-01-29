@@ -241,15 +241,15 @@ def get_highest_density_interval(
 
 
 def get_invgamma_params(
-    sigma_prior: float, effective_sample_size: int
+    variance_prior: float, effective_sample_size: int
 ) -> Dict[str, float]:
     """Calculates the parameters for the inverse gamma distribution to use as the
     prior distribution for an unknown variance of a normal distribution.
 
     Parameters
     ----------
-    sigma_prior: float
-        Prior point estimate of sigma (unknown variance).
+    variance_prior: float
+        Prior point estimate of sigma**2 (unknown variance).
     effective_sample_size: int
         Effective sample size of prior.
 
@@ -261,7 +261,7 @@ def get_invgamma_params(
     """
     return dict(
         alpha=effective_sample_size / 2.0,
-        beta=sigma_prior * effective_sample_size / 2.0,
+        beta=variance_prior * effective_sample_size / 2.0,
     )
 
 
