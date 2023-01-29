@@ -187,8 +187,8 @@ ax.plot(
     color="orange", 
     label="skeptical prior"
 )
-ax.plot(ninfo_kde.support, ninfo_kde.density, label="noniformative")
-ax.plot(skeptical_kde.support, skeptical_kde.density, label="skeptical")
+ax.plot(ninfo_kde.support, ninfo_kde.density, label="noniformative posterior")
+ax.plot(skeptical_kde.support, skeptical_kde.density, label="skeptical posterior")
 _ = ax.legend()
 ```
 
