@@ -50,12 +50,15 @@ mpl.rcParams['figure.facecolor'] = 'white'
 mpl.rcParams['axes.facecolor'] = 'white'
 ```
 
+<!-- #region heading_collapsed=true -->
 # Bernoulli likelihood
+<!-- #endregion -->
 
-
+<!-- #region hidden=true -->
 ## Load data
+<!-- #endregion -->
 
-```python
+```python hidden=true
 DATA_DIR = Path(os.environ.get("DATA_DIR"))
 data = pd.read_csv(DATA_DIR.joinpath("urine.csv"))
 missing = data.isnull().values.any(-1)
@@ -64,29 +67,35 @@ print(data.shape)
 data.head()
 ```
 
+<!-- #region hidden=true -->
 ## Normalize predictors
+<!-- #endregion -->
 
-```python
+```python hidden=true
 x = data.loc[:,['gravity', 'ph', 'osmo', 'cond', 'urea', 'calc']]
 means, stds = x.mean(0), x.std(0)
 x_norm = (x - means) / stds
 ```
 
-```python
+```python hidden=true
 means
 ```
 
+<!-- #region hidden=true -->
 ## Default Reference Logit Model
+<!-- #endregion -->
 
-```python
+```python hidden=true
 logit_model = sm.Logit(data.r.values, x_norm)
 results = logit_model.fit()
 results.summary()
 ```
 
+<!-- #region hidden=true -->
 ## Bayesian Logit Model
+<!-- #endregion -->
 
-```python
+```python hidden=true
 # Laplace prior
 x = np.linspace(-5,5,1000)
 fig, ax = plt.subplots(figsize=(10,5))
@@ -95,9 +104,11 @@ for s in [0.25, 0.5, 1, 2, 4]:
 _ = ax.legend()
 ```
 
+<!-- #region hidden=true -->
 ### Priors
+<!-- #endregion -->
 
-```python
+```python hidden=true
 intercept_prior = dict(
     mu=0,
     sigma=1/25,
@@ -111,9 +122,11 @@ betas_prior_params = dict(
 print(betas_prior_params)
 ```
 
+<!-- #region hidden=true -->
 ### Model specification
+<!-- #endregion -->
 
-```python
+```python hidden=true
 with pm.Model() as logit_model:
     # Priors for unknown model parameters
     intercept = pm.Normal("intercept", **intercept_prior)
@@ -128,13 +141,15 @@ with pm.Model() as logit_model:
 logit_model
 ```
 
-```python
+```python hidden=true
 pm.model_to_graphviz(logit_model)
 ```
 
+<!-- #region hidden=true -->
 ### Model fitting
+<!-- #endregion -->
 
-```python
+```python hidden=true
 RANDOM_SEED = 58 
 rng = np.random.default_rng(RANDOM_SEED)
 
@@ -150,22 +165,24 @@ with logit_model:
     trace_posterior = pm.sample_posterior_predictive(trace_posterior, extend_inferencedata=True, random_seed=rng)
 ```
 
-```python
+```python hidden=true
 az.summary(trace_posterior)
 ```
 
-```python
+```python hidden=true
 az.plot_trace(trace_posterior, combined=True)
 ```
 
-```python
+```python hidden=true
 axs = az.plot_forest(trace_posterior, var_names=["betas"], combined=True, hdi_prob=0.95, r_hat=True)
 axs[0].axvline(x=0, color="red", linestyle="--")
 ```
 
+<!-- #region hidden=true -->
 ### Model specification 2
+<!-- #endregion -->
 
-```python
+```python hidden=true
 
 betas_prior_params_2 = dict(
     mu=0,
@@ -186,9 +203,11 @@ with pm.Model() as logit_model_2:
 pm.model_to_graphviz(logit_model_2)
 ```
 
+<!-- #region hidden=true -->
 ### Model fitting
+<!-- #endregion -->
 
-```python
+```python hidden=true
 RANDOM_SEED = 58 
 rng = np.random.default_rng(RANDOM_SEED)
 
@@ -204,7 +223,7 @@ with logit_model_2:
     trace_posterior_2 = pm.sample_posterior_predictive(trace_posterior_2, extend_inferencedata=True, random_seed=rng)
 ```
 
-```python
+```python hidden=true
 az.summary(trace_posterior_2)
 ```
 
@@ -229,10 +248,6 @@ data["success_rate"] = data.Correct / data.Trials
 ### one-hot-encode predictors
 
 ```python
-x.columns
-```
-
-```python
 x = pd.concat(
     (
         data.loc[:, ["Age", "Loud"]],
@@ -247,6 +262,10 @@ x = x[['Age', 'Loud', 'OME_low','Noise_incoherent']]
 ```
 
 ```python
+x.columns
+```
+
+```python
 fig, axs = plt.subplots(nrows=4, figsize=(12,20))
 axs[0].scatter(data.Age, data.success_rate)
 axs[1].scatter(data.OME, data.success_rate)
@@ -254,23 +273,25 @@ axs[2].scatter(data.Loud, data.success_rate)
 axs[3].scatter(data.Noise, data.success_rate)
 ```
 
+<!-- #region heading_collapsed=true -->
 ## Binomial GLM
+<!-- #endregion -->
 
-```python
+```python hidden=true
 mask = x.Age == 60
 mask = mask & (x.Loud == 50) & (x.OME_low == 0) & (x.Noise_incoherent == 0)
 mask.mean()
 ```
 
-```python
+```python hidden=true
 data.success_rate[mask].mean()
 ```
 
-```python
+```python hidden=true
 help(sm.GLM)
 ```
 
-```python
+```python hidden=true
 binomial_glm = sm.GLM(
     endog=data.success_rate,
     exog=sm.add_constant(x),
@@ -281,11 +302,11 @@ results = binomial_glm.fit()
 results.summary()
 ```
 
-```python
+```python hidden=true
 1 / (1 + np.exp(-(-7.2944 + 60*0.0189 + 50*0.1717)))
 ```
 
-```python
+```python hidden=true
 p_correct = 1 / (1 + np.exp(-(-7.2944 + 0.0189*x.Age + 0.1717*x.Loud + -0.2372*x.OME_low + 1.5763*x.Noise_incoherent)))
 ```
 
@@ -325,9 +346,11 @@ with pm.Model() as bin_logit_model:
 pm.model_to_graphviz(bin_logit_model)
 ```
 
+<!-- #region heading_collapsed=true -->
 ### Model fitting
+<!-- #endregion -->
 
-```python
+```python hidden=true
 RANDOM_SEED = 58 
 rng = np.random.default_rng(RANDOM_SEED)
 
@@ -343,16 +366,68 @@ with bin_logit_model:
     trace_posterior = pm.sample_posterior_predictive(trace_posterior, extend_inferencedata=True, random_seed=rng)
 ```
 
-```python
+```python hidden=true
 az.summary(trace_posterior)
 ```
 
-```python
+```python hidden=true
 az.plot_trace(trace_posterior, combined=True)
 ```
 
-```python
+```python hidden=true
 axs = az.plot_forest(trace_posterior, var_names=["betas"], combined=True, hdi_prob=0.95, r_hat=True)
+```
+
+## Hierarchical Binomial Logit
+
+```python
+x["id"] = data.ID
+x.columns
+```
+
+### Model specification
+
+```python
+with pm.Model() as h_bin_logit_model:
+    # Priors for unknown model parameters
+    a_mu = pm.Normal("a_mu", mu=0, sigma=10)
+    a_std = pm.InverseGamma("a_var", alpha=1/2, beta=1/2)**0.5
+    intercepts = pm.Normal("intercepts", mu=a_mu, sigma=a_std, shape=len(x["id"].unique()))
+    betas = pm.Normal("betas", mu=0, sigma=4, shape=4)
+
+    for i, child_id in enumerate(x["id"].unique()):
+        x_i = x.query("id == @child_id").loc[:, ['Age', 'OME_low', 'Loud', 'Noise_incoherent']]
+        logit_p_i = intercepts[i] + x_i.values @ betas
+        y_i = pm.Binomial(
+            f"y_{child_id}",
+            n=data.query("ID == @child_id").Trials,
+            logit_p=logit_p_i,
+            observed=data.query("ID == @child_id").Correct
+        )
+    
+    
+pm.model_to_graphviz(h_bin_logit_model)
+```
+
+### Model fitting
+
+```python
+RANDOM_SEED = 58 
+rng = np.random.default_rng(RANDOM_SEED)
+
+# Number of chains
+chains = 5
+
+# Number of samples per chain
+draws = 15000
+
+with h_bin_logit_model:
+    # draw posterior samples
+    trace_hbl = pm.sample(draws=draws, chains=chains)
+```
+
+```python
+az.summary(trace_hbl)
 ```
 
 ```python

@@ -50,20 +50,26 @@ mpl.rcParams['axes.facecolor'] = 'white'
 
 # Leinhardt data
 
-
+<!-- #region heading_collapsed=true -->
 ## Load data
+<!-- #endregion -->
 
-```python
+```python hidden=true
 DATA_DIR = Path(os.environ.get("DATA_DIR"))
 data = pd.read_csv(DATA_DIR.joinpath("leinhardt.csv"))
 missing = data.isnull().values.any(-1)
 data = data.loc[~missing, :]
 data["log_income"] = np.log(data.income)
 data["log_infant"] = np.log(data.infant)
+data["oil"] = (data["oil"] == "yes").astype(float)
 data.shape
 ```
 
-```python
+```python hidden=true
+data.head()
+```
+
+```python hidden=true
 fig, ax = plt.subplots(figsize=(10,10))
 ax.scatter(data.log_income, data.log_infant)
 ax.set_xlabel("Log(Income)")
@@ -82,8 +88,8 @@ betas_prior_params = dict(
 )
 print(betas_prior_params)
 
-sigma_prior_params = get_invgamma_params(sigma_prior=10, effective_sample_size=5)
-print(sigma_prior_params)
+variance_prior_params = get_invgamma_params(variance_prior=10, effective_sample_size=5)
+print(variance_prior_params)
 ```
 
 ### Model specification
@@ -92,7 +98,7 @@ print(sigma_prior_params)
 with pm.Model() as lm:
     # Priors for unknown model parameters
     betas = pm.Normal("betas", **betas_prior_params, shape=2)
-    sigma = pm.InverseGamma("sigma", **sigma_prior_params)
+    sigma = pm.InverseGamma("variance", **variance_prior_params)**0.5
 
     # Expected value of outcome
     mu = betas[0] + betas[1] * data.log_income
@@ -133,92 +139,27 @@ draws = 5000
 
 with lm:
     # draw posterior samples
-    trace_posterior = pm.sample(draws=draws, chains=chains)
-    trace_posterior = pm.sample_posterior_predictive(trace_posterior, extend_inferencedata=True, random_seed=rng)
+    trace_lm = pm.sample(draws=draws, chains=chains)
+    trace_lm = pm.sample_posterior_predictive(trace_lm, extend_inferencedata=True, random_seed=rng)
 ```
 
 ```python
-az.summary(trace_posterior)
+az.summary(trace_lm)
 ```
 
 ```python
-az.plot_trace(trace_posterior, combined=True)
+az.plot_trace(trace_lm, combined=True)
 ```
 
 ```python
-az.plot_forest(trace_posterior, var_names=["betas"], combined=True, hdi_prob=0.95, r_hat=True)
+az.plot_forest(trace_lm, var_names=["betas"], combined=True, hdi_prob=0.95, r_hat=True)
 ```
 
 ```python
 
 fig, ax = plt.subplots(figsize=(10,5))
-_ = ax.hist(trace_posterior.posterior_predictive.y[0, :, 0], bins=30)
+_ = ax.hist(trace_lm.posterior_predictive.y[0, :, 0], bins=30)
 _ = ax.axvline(x=data.log_infant[0], color="red")
-```
-
-<!-- #region heading_collapsed=true -->
-### Posterior samples
-<!-- #endregion -->
-
-```python hidden=true
-betas = np.array(idata.posterior.betas)
-print(betas.shape)
-sigma = np.array(idata.posterior.sigma)
-print(sigma.shape)
-```
-
-## Convergence Diagnostics
-
-
-### Trace plots
-
-```python
-fig, axs = plt.subplots(nrows=3, figsize=(10,15))
-for i in range(chains):
-    axs[0].plot(betas[i, :, 0], alpha=0.5, label=f"Chain {i}")
-    axs[1].plot(betas[i, :, 1], alpha=0.5, label=f"Chain {i}")
-    axs[2].plot(sigma[i, :], alpha=0.5, label=f"Chain {i}")
-axs[0].set_title("Beta 0 trace plot")
-axs[1].set_title("Beta 1 trace plot")
-axs[2].set_title("Sigma trace plot")
-```
-
-<!-- #region heading_collapsed=true -->
-### Effective sample sizes
-<!-- #endregion -->
-
-```python hidden=true
-betas_ess = np.array([
-    [
-        get_effective_sample_size(chain, lags=100) for chain in betas[..., i]
-    ]
-    for i in range(betas.shape[-1])
-])
-betas_ess.mean(-1)
-```
-
-## Posterior Analysis
-
-
-### Posterior Mean Estimates
-
-```python
-pme = betas.mean((0,1))
-pme
-```
-
-```python
-y_hat = pme[0] + pme[1]*data.log_income
-```
-
-```python
-
-```
-
-```python
-residuals = data.log_infant - y_hat
-fig, ax = plt.subplots(figsize=(10,10))
-ax.scatter(y_hat, residuals)
 ```
 
 ## T-distribution likelihood
@@ -233,8 +174,8 @@ betas_prior_params = dict(
 )
 print(betas_prior_params)
 
-sigma_prior_params = get_invgamma_params(sigma_prior=10, effective_sample_size=5)
-print(sigma_prior_params)
+variance_prior_params = get_invgamma_params(variance_prior=10, effective_sample_size=5)
+print(variance_prior_params)
 
 df_prior_params = {'lam': 0.25}
 print(df_prior_params)
@@ -252,10 +193,10 @@ ax.legend()
 ### Model specification
 
 ```python
-with pm.Model() as lm1:
+with pm.Model() as t_lm:
     # Priors for unknown model parameters
     betas = pm.Normal("betas", **betas_prior_params, shape=2)
-    sigma = pm.InverseGamma("sigma", **sigma_prior_params)
+    sigma = pm.InverseGamma("variance", **variance_prior_params)**0.5
     df = pm.Exponential("df", **df_prior_params)
 
     # Expected value of outcome
@@ -266,11 +207,11 @@ with pm.Model() as lm1:
     # Likelihood (sampling distribution) of observations
     y = pm.StudentT("y", mu=mu, sigma=sigma, nu=nu, observed=data.log_infant)
     
-lm1
+t_lm
 ```
 
 ```python
-pm.model_to_graphviz(lm1)
+pm.model_to_graphviz(t_lm)
 ```
 
 ### Model fitting
@@ -282,26 +223,73 @@ chains = 5
 # Number of samples per chain
 draws = 5000
 
-with lm1:
+with t_lm:
     # draw posterior samples
-    idata = pm.sample(draws=draws, chains=chains)
+    trace_t_lm = pm.sample(draws=draws, chains=chains)
 ```
 
 ```python
-az.summary(idata)
+az.summary(trace_t_lm)
 ```
 
 ### Posterior distribution of DF
 
 ```python
 fig, ax = plt.subplots(figsize=(10,5))
-_, bins, _ = ax.hist(np.array(idata.posterior.df[0]), bins=50, density=True)
+_, bins, _ = ax.hist(np.array(trace_t_lm.posterior.df[0]), bins=50, density=True)
 _ = ax.plot(bins, stats.expon(scale=1/0.25).pdf(bins))
 _ = ax.set_xticklabels(ax.get_xticklabels)
 ```
 
+## Hierarchical Linear Regression
+
 ```python
-az.convert_to_inference_data(idata)
+data.region.value_counts()
+```
+
+### Model specification
+
+```python
+with pm.Model() as h_lm:
+    # Priors for unknown model parameters
+    a_mu = pm.Normal("a_mu", mu=0.0, sigma=1e3)
+    a_std = pm.InverseGamma("a_var", **get_invgamma_params(variance_prior=10, effective_sample_size=1))**0.5
+    alphas = pm.Normal("alpha", mu=a_mu, sigma=a_std, shape=4)
+    betas = pm.Normal("betas", mu=0.0, sigma=1e3, shape=2)
+    sigma = pm.InverseGamma("variance", **get_invgamma_params(variance_prior=10, effective_sample_size=5))**0.5
+
+    for i, region in enumerate(data.region.unique()):
+        d_r = data.query("region == @region")
+        mu_r = alphas[i] + betas[0] * d_r.log_income + betas[1] * d_r.oil
+        y_r = pm.Normal(f"y_{region}", mu=mu_r, sigma=sigma, observed=d_r.log_infant)
+    
+h_lm
+```
+
+```python
+pm.model_to_graphviz(h_lm)
+```
+
+### Model fitting
+
+```python
+# Number of chains
+chains = 5
+
+# Number of samples per chain
+draws = 5000
+
+with h_lm:
+    # draw posterior samples
+    trace_h_lm = pm.sample(draws=draws, chains=chains)
+```
+
+```python
+az.summary(trace_h_lm)
+```
+
+```python
+az.plot_trace(trace_h_lm, combined=True)
 ```
 
 # Anscombe data
@@ -341,15 +329,15 @@ betas_prior_params = dict(
 )
 print(betas_prior_params)
 
-sigma_prior_params = get_invgamma_params(sigma_prior=1500*0.5, effective_sample_size=2)
-print(sigma_prior_params)
+variance_prior_params = get_invgamma_params(variance_prior=1500*0.5, effective_sample_size=2)
+print(variance_prior_params)
 ```
 
 ```python
 with pm.Model() as lm2:
     # Priors
     betas = pm.Normal("betas", **betas_prior_params, shape=3+1)
-    sigma = pm.InverseGamma("sigma", **sigma_prior_params, shape=1)
+    sigma = pm.InverseGamma("variance", **variance_prior_params, shape=1)**0.5
     
     # Expected value of outcome
     mu = betas[0] + data[['income', 'young', 'urban']].values @ betas[1:]

@@ -67,7 +67,7 @@ mu_priors = dict(mu=0, sigma=1, nu=1.0)
 print(mu_priors)
 
 # Sigma prior params
-sigma_priors = get_invgamma_params(sigma_prior=1, effective_sample_size=2)
+sigma_priors = get_invgamma_params(variance_prior=1, effective_sample_size=2)
 print(sigma_priors)
 ```
 

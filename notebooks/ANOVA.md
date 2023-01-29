@@ -96,8 +96,8 @@ betas_prior_params = dict(
 )
 print(betas_prior_params)
 
-sigma_prior_params = get_invgamma_params(sigma_prior=1, effective_sample_size=5)
-print(sigma_prior_params)
+variance_prior_params = get_invgamma_params(variance_prior=1, effective_sample_size=5)
+print(variance_prior_params)
 ```
 
 ### Model specification
@@ -106,7 +106,7 @@ print(sigma_prior_params)
 with pm.Model() as lm:
     # Priors for unknown model parameters
     betas = pm.Normal("betas", **betas_prior_params, shape=3)
-    sigma = pm.InverseGamma("sigma", **sigma_prior_params)
+    sigma = pm.InverseGamma("variance", **variance_prior_params)**0.5
 
     # Expected value of outcome
     mu = x @ betas
@@ -210,13 +210,13 @@ betas_prior_params = dict(
 )
 print(betas_prior_params)
 
-sigma_prior_params = get_invgamma_params(sigma_prior=1, effective_sample_size=5)
-print(sigma_prior_params)
+variance_prior_params = get_invgamma_params(variance_prior=1, effective_sample_size=5)
+print(variance_prior_params)
 
 with pm.Model() as mvm:
     # Priors for unknown model parameters
     betas = pm.Normal("betas", **betas_prior_params, shape=3)
-    sigmas = pm.InverseGamma("sigma", **sigma_prior_params, shape=3)
+    sigmas = pm.InverseGamma("variances", **variance_prior_params, shape=3)**0.5
 
     # Likelihood (sampling distribution) of observations
     for i in range(x.shape[1]):
