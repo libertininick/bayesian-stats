@@ -67,9 +67,6 @@ _ = ax.hist(data, bins=30)
 
 ## Hierarchical Mixture Model
 
-```python
-help(pm.Mixture)
-```
 
 ### Model specification
 
@@ -80,7 +77,7 @@ with pm.Model() as mm_model:
     mu_b = pm.Normal("mu_b", mu=1, sigma=10)
     
     # Prior for unknown common std of mixture distributions
-    sigma = pm.InverseGamma("sigma", **get_invgamma_params(variance_prior=1**2, effective_sample_size=1))**0.5
+    sigma = pm.InverseGamma("variance", **get_invgamma_params(variance_prior=1**2, effective_sample_size=1))**0.5
     
     # Component distributions
     components = [
@@ -116,9 +113,6 @@ draws = 5000
 with mm_model:
     # draw posterior samples
     trace_mm_model = pm.sample(draws=draws, chains=chains)
-    
-    # Add posterior predictive distribution
-    trace_mm_model = pm.sample_posterior_predictive(trace_mm_model, extend_inferencedata=True, random_seed=rng)
 ```
 
 ```python
@@ -129,22 +123,88 @@ az.summary(trace_mm_model)
 az.plot_trace(trace_mm_model, combined=True)
 ```
 
+## Posterior probability of latent group membership
+P(y_i from grp_k | data) = likelihood_grp_k(y_i) * wt_k / SUM(likelihood_grp_k(y_i) * wt_k, k=0, k=k)
+
 ```python
-data.y
+# poserior sample means for both dists & posterior std
+mu_a = np.array(trace_mm_model.posterior.mu_a).reshape(-1)
+mu_b = np.array(trace_mm_model.posterior.mu_b).reshape(-1)
+std = np.array(trace_mm_model.posterior.variance).reshape(-1)**0.5
+
+# Posterior dists for each group
+grp_a_dist = stats.norm(loc=mu_a, scale=std)
+grp_b_dist = stats.norm(loc=mu_b, scale=std)
+
+# poserior wt of each latent group
+wts = np.array(trace_mm_model.posterior.wts).reshape(-1, 2)
+
+mu_a.shape, mu_b.shape, std.shape, wts.shape
 ```
 
 ```python
-fig, ax = plt.subplots(figsize=(10,5))
-_, bins, _ = ax.hist(
-    np.array(trace_mm_model.posterior_predictive.like[...,0]).reshape(-1),
-    bins=100,
-    alpha=0.5
-)
-_ = ax.hist(
-    np.array(trace_mm_model.posterior_predictive.like[...,197]).reshape(-1),
+from typing import List
+
+def get_posterior_membership_probs(
+    y: float,
+    grp_dists: List[stats.rv_continuous],
+    grp_wts: ndarray
+) -> ndarray:
+    """Returns distribution of posterior membership probability of 
+    an observation to each latent group in the mixture
+    
+    Parameters
+    ----------
+    y: float
+        Observation
+    grp_dists: List[stats.rv_continuous]
+        Posterior distributions for each group in mixture.
+    grp_wts: ndarray, shape=(n_posterior_samples, n_groups)
+        Posterior mixture probabilities for groups.
+        
+    Returns
+    -------
+    distributions: ndarray, shape=(n_posterior_samples, n_groups)
+    """
+    
+    # Liklihood of membership to each group based on posterior group distributions
+    likelihoods = np.stack([dist.pdf(y) for dist in grp_dists], axis=-1)
+    
+    posterior_membership_probs = (likelihoods * wts) / (likelihoods * wts).sum(axis=-1, keepdims=True)
+    
+    return posterior_membership_probs
+```
+
+```python
+y = 0.1
+
+pmp = get_posterior_membership_probs(y, [grp_a_dist, grp_b_dist], wts)
+print(pmp.mean(0))
+
+fig, axs = plt.subplots(nrows=2, figsize=(10,10))
+_ = axs[0].set_title("observed data")
+_ = axs[0].hist(data, bins=30)
+_ = axs[0].axvline(x=y, color="red")
+
+bins = np.linspace(0, 1, 100)
+_ = axs[1].set_title("Posterior probability distributions of group membership")
+_ = axs[1].hist(
+    pmp[:,0],
     bins=bins,
-    alpha=0.5
+    alpha=0.5,
+    label="Group A",
 )
+_ = axs[1].hist(
+    np.array(pmp[:,1]),
+    bins=bins,
+    alpha=0.5,
+    label="Group B",
+)
+_ = axs[1].legend()
+```
+
+```python
+
 ```
 
 ```python
