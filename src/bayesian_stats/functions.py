@@ -1,8 +1,9 @@
-from typing import Dict, Iterable, Union
+from typing import Any, Dict, Iterable, Union
 
 import numpy as np
 import pandas as pd
-from numpy import ndarray
+
+from numpy.typing import NDArray
 
 
 __all__ = [
@@ -17,14 +18,14 @@ __all__ = [
 
 
 def get_auto_corr(
-    x: ndarray, lags: Union[int, Iterable[int], ndarray, None] = None
-) -> ndarray:
+    x: NDArray[Any], lags: Union[int, Iterable[int], NDArray[np.int64], None] = None
+) -> NDArray[np.float64]:
     """Auto-correlation of a vector for specific lags
 
     Parameters
     ----------
-    x: ndarray, shape=(N,)
-    lags: Union[int, Iterable[int], ndarray], None
+    x: NDArray[Any], shape=(N,)
+    lags: Union[int, Iterable[int], NDArray[np.int64]], None
         Lag or lags to calculate autocorrelation for.
         If lags is an integer, will assume the first ``m`` lags,
         where ``m`` is the value passed.
@@ -35,7 +36,7 @@ def get_auto_corr(
 
     Returns
     -------
-    auto_corr: ndarray, shape=(n_lags,)
+    auto_corr: NDArray[np.float64], shape=(n_lags,)
         Vector of auto-correlations
     """
     if x.ndim > 1:
@@ -49,7 +50,7 @@ def get_auto_corr(
     if isinstance(lags, int):
         lags = np.arange(lags)
 
-    if not isinstance(lags, ndarray):
+    if not isinstance(lags, np.ndarray):
         lags = np.array(lags)
 
     if lags.ndim != 1:
@@ -67,14 +68,14 @@ def get_auto_corr(
 
 
 def get_effective_sample_size(
-    chain: ndarray, lags: int, burn_in_frac: float = 0.5
+    chain: NDArray[Any], lags: int, burn_in_frac: float = 0.5
 ) -> float:
     """Estimates the effective sample size based on the auto-correlation of
     a posterior MCMC sample chain.
 
     Parameters
     ----------
-    chain: ndarray, shape=(N,)
+    chain: NDArray[Any], shape=(N,)
         Posterior MCMC samples for a given model parameter for a single chain.
     lags: int
         Number of auto-correlation lags.
@@ -106,12 +107,14 @@ def get_effective_sample_size(
     return effective_sample_size
 
 
-def get_gelman_rubin_diagnostic(chains: ndarray, burn_in_frac: float = 0.5) -> float:
+def get_gelman_rubin_diagnostic(
+    chains: NDArray[Any], burn_in_frac: float = 0.5
+) -> float:
     """Gelman-Rubin Convergence Diagnostic
 
     Parameters
     ----------
-    chains: ndarray, shape=(M, N)
+    chains: NDArray[Any], shape=(M, N)
         Posterior MCMC samples for a given model parameter.
     burn_in_frac: float, optional
         Remove the first x% of chain samples for burn-in
@@ -164,19 +167,23 @@ def get_gelman_rubin_diagnostic(chains: ndarray, burn_in_frac: float = 0.5) -> f
 
 
 def get_highest_density_interval(
-    x: ndarray, confidence_level: float = 0.95, axis: Union[int, None] = None
-) -> ndarray:
+    x: NDArray[Any], confidence_level: float = 0.95, axis: Union[int, None] = None
+) -> NDArray[Any]:
     """Highest Posterior Density credible interval (HDI)
 
     Parameters
     ----------
-    x: ndarray
+    x: NDArray[Any]
         Posterior samples.
     confidence_level: float, optional
         Confidence level for credible interval.
     axis: int, optional
         Axis to summarize HDI for.
         If ``None``, will flatten data and summarize over all.
+
+    Returns
+    -------
+    credible_intervals: NDArray[Any]
 
     Examples
     --------
@@ -266,7 +273,9 @@ def get_invgamma_params(
     )
 
 
-def one_hot_encode(x: Union[pd.Series, ndarray], var_name: str = None) -> pd.DataFrame:
+def one_hot_encode(
+    x: Union[pd.Series, NDArray[Any]], var_name: str = None
+) -> pd.DataFrame:
     """One-hot-encode a categorical variable
 
     Parameters
@@ -300,12 +309,14 @@ def one_hot_encode(x: Union[pd.Series, ndarray], var_name: str = None) -> pd.Dat
     return df_ohe
 
 
-def get_rolling_windows(arr: ndarray, window_size: int, stride: int = 1) -> ndarray:
+def get_rolling_windows(
+    arr: NDArray[Any], window_size: int, stride: int = 1
+) -> NDArray[Any]:
     """Generate a rolling window of input based on a target window and step size
 
     Parameters
     ----------
-    arr: ndarray, shape=(N,...)
+    arr: NDArray[Any], shape=(N,...)
         A n-dim array
     window_size: int
         Rolling window size.
@@ -315,7 +326,7 @@ def get_rolling_windows(arr: ndarray, window_size: int, stride: int = 1) -> ndar
 
     Returns
     -------
-    windows: ndarray, shape=((N - window_size) // stride + 1, window_size, ...)
+    windows: NDArray[Any], shape=((N - window_size) // stride + 1, window_size, ...)
         Rolling windows from input.
 
     Examples
