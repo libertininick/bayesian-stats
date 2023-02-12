@@ -53,7 +53,7 @@ mpl.rcParams['figure.facecolor'] = 'white'
 mpl.rcParams['axes.facecolor'] = 'white'
 ```
 
-# Load data
+# Data
 
 ```python
 DATA_DIR = Path(os.environ.get("DATA_DIR"))
@@ -63,26 +63,14 @@ print(data.shape)
 print(data.head(5))
 ```
 
-## Log returns
+## Market environment: Rising vs. Declining
 
 ```python
+dates = pd.to_datetime(data.Date).values
 prices = data.Close.values
-log_returns = np.log(prices[1:] / prices[:-1])
-n = len(log_returns)
-idxs = np.arange(n)
 
-dates = pd.to_datetime(data.Date).values[1:]
-prices= prices[1:]
-```
+market_declines = find_market_declines(dates=dates, prices=prices)
 
-### Market environment: Rising vs. Declining
-
-```python
-market_declines = find_market_declines(
-    dates=dates,
-    prices=prices,
-)
-decline_flag = in_market_decline(dates, market_declines)
 
 n_declines = len(market_declines)
 n_decline_days = sum(md.length for md in market_declines)
@@ -94,10 +82,6 @@ print(f"Length: {np.quantile([md.length for md in market_declines], q=[0, 0.25, 
 ```
 
 ```python
-dates.min(), dates.max()
-```
-
-```python
 fig, ax = plt.subplots(figsize=(15, 7))
 
 ax.set_title("S&P 500 Index\n1928-01-04 to 2022-10-21")
@@ -106,77 +90,27 @@ ax.set_xlabel("Date")
 ax.set_ylabel("Price (log scale)")
 ax.plot(dates, prices, color="black")
 
-for md in market_declines:
-    ax.axvspan(md.start, md.end, color='red', alpha=0.5)
+for i, md in enumerate(market_declines):
+    ax.axvspan(
+        md.start, 
+        md.end, 
+        color='red', 
+        alpha=0.5,
+        label = None if i else "Market Decline",
+    )
+_ = ax.legend(fontsize=14, loc='upper left')
 ```
 
-### Dristibution of returns | Market evenironment
+## Log returns
 
 ```python
-mu_a, sigma_a = log_returns.mean(), log_returns.std()
-mu_r, sigma_r = log_returns[~decline_flag].mean(), log_returns[~decline_flag].std()
-mu_d, sigma_d = log_returns[decline_flag].mean(), log_returns[decline_flag].std()
-print(f"All      : {mu_a:>8.4%}, {sigma_a:>6.2%}")
-print(f"Rising   : {mu_r:>8.4%}, {sigma_r:>6.2%}")
-print(f"Declining: {mu_d:>8.4%}, {sigma_d:>6.2%}")
-```
+log_returns = np.log(prices[1:] / prices[:-1])
+n = len(log_returns)
+idxs = np.arange(n)
 
-```python
-fig, axs = plt.subplots(nrows=3, figsize=(10,10), sharex=True)
-_ = axs[0].set_xlim(-0.05, 0.05)
-
-axs[0].set_title(f"Distribution of daily log returns (all days)\nmean: {mu_a:>6.4%} std: {sigma_a:>6.2%}")
-_, bins, _ = axs[0].hist(
-    log_returns, 
-    bins=301, 
-    density=True, 
-    edgecolor="black", 
-    alpha=0.5, 
-    label="Observed returns"
-)
-_ = axs[0].plot(
-    bins,
-    stats.norm(loc=mu, scale=sigma).pdf(bins),
-    color="black",
-    linestyle="--",
-    label="N(mean, std)"
-)
-_ = axs[0].legend()
-
-axs[1].set_title(f"Periods when market was rising\nmean: {mu_r:>6.4%} std: {sigma_r:>6.2%}")
-_ = axs[1].hist(
-    log_returns[~decline_flag], 
-    bins=bins, 
-    density=True,
-    color="green",
-    edgecolor="black", 
-    alpha=0.5, 
-    label="Rising market returns"
-)
-_ = axs[1].plot(
-    bins,
-    stats.norm(loc=mu, scale=sigma).pdf(bins),
-    color="black",
-    linestyle="--"
-)
-
-axs[2].set_title(f"Periods when market was declining\nmean: {mu_d:>6.4%} std: {sigma_d:>6.2%}")
-axs[2].set_xlabel("log return")
-_ = axs[2].hist(
-    log_returns[decline_flag], 
-    bins=bins, 
-    density=True,
-    color="red",
-    edgecolor="black", 
-    alpha=0.5, 
-    label="Declining market returns"
-)
-_ = axs[2].plot(
-    bins,
-    stats.norm(loc=mu, scale=sigma).pdf(bins),
-    color="black",
-    linestyle="--"
-)
+# Adjust dates and prices by 1
+dates = dates[1:]
+prices= prices[1:]
 ```
 
 ## Rolling windows
@@ -232,86 +166,153 @@ fig, ax = plt.subplots(figsize=(15, 7))
 ax.plot(dates[n_long - 1:], rolling_10yr_std)
 ```
 
-### Ratio of 3mo std to 10yr std
+### Rolling 10-yr 3-month volatility range
 
 ```python
-rolling_vol_ratio = rolling_3mo_std[n_long - n_short:] / rolling_10yr_std
+rolling_10yrs_3mo_std = rolling_3mo_std[windows_long[:-(n_short - 1)]]
+rolling_min_3mo_std = rolling_10yrs_3mo_std.min(-1)
+rolling_max_3mo_std = rolling_10yrs_3mo_std.max(-1)
+rolling_3mo_std_range = (rolling_10yrs_3mo_std[:,-1] - rolling_min_3mo_std) / (rolling_max_3mo_std - rolling_min_3mo_std)
 ```
 
 ```python
-fig, ax = plt.subplots(figsize=(10, 5))
-_ = ax.hist(rolling_vol_ratio, bins=101, edgecolor="black", alpha=0.5)
+fig, ax = plt.subplots(figsize=(15, 7))
+ax.plot(dates[n_short + n_long - 2:], rolling_3mo_std_range)
+```
+
+```python
+n_diff = len(rolling_price_range) - len(rolling_3mo_std_range)
 ```
 
 ```python
 n_bins = 5
-bins = np.quantile(rolling_price_range, q=np.arange(0, 1, 1/n_bins))
-bin_labels = np.digitize(rolling_price_range, bins) - 1
+bins = np.quantile(rolling_price_range[n_diff:], q=np.arange(0, 1, 1/n_bins))
+bin_labels = np.digitize(rolling_price_range[n_diff:], bins) - 1
 print(np.unique(bin_labels, return_counts=True))
 
 fig, axs = plt.subplots(ncols=n_bins, figsize=(15, 7), sharey=True)
 for i in range(n_bins):
     axs[i].boxplot(
-        rolling_vol_ratio[bin_labels == i],
+        rolling_3mo_std_range[bin_labels == i],
         sym='',                                 # No fliers
         whis=(5, 95),                           # 5% and 95% whiskers
     )
-    axs[i].set_xlabel(f"{rolling_price_range[bin_labels == i].mean():.0%}")
+    axs[i].set_xlabel(f"{rolling_price_range[n_diff:][bin_labels == i].mean():.0%}")
 # ax.scatter(rolling_price_range, rolling_vol_ratio, alpha=0.25)
 ```
 
-```python
-np.unique(bin_labels, return_counts=True)
-```
-
-## Normalized returns
+## Aligned data
 
 ```python
-n1 = 252
-rolling_mean = np.concatenate((
-    [np.nan]*(n1 - 1),
-    get_rolling_windows(log_daily_returns, window_size=n1).mean(-1)
-))
-# Adjust to monthly
-rolling_mean = rolling_mean[21 - 1:] * 21
+n_forecast = 21
+cumulative_ret = np.cumsum(log_returns[n_long + n_short - 2:])
+next_month_ret = cumulative_ret[n_forecast:] - cumulative_ret[:-n_forecast]
 
-n2 = 60
-rolling_std = np.concatenate((
-    [np.nan]*(n2 - 1),
-    get_rolling_windows(log_daily_returns, window_size=n2).std(-1)
-))
-# Adjust to monthly
-rolling_std = rolling_std[21 - 1:] * 21**0.5
+# Root explanitory factors
+price_range=rolling_price_range[n_short - 1:-n_forecast]
+volatility_range=rolling_3mo_std_range[:-n_forecast]
+price_vol_range_interaction = (
+    (2 * price_range * volatility_range) 
+    / (price_range + volatility_range + 1e-6)
+)
 
-norm_rets = (log_monthly_returns[1:] - rolling_mean[:-1]) / rolling_std[:-1]
-norm_rets = norm_rets[n1:]
-aligned_dates = dates[21 + 1 + n1:]
-```
+d_aligned = dict(
+    date=dates[n_long + n_short - 2:-n_forecast],
+    mean_long_term=rolling_10yr_mean[n_short - 1:-n_forecast] * n_forecast,
+    mean_short_term=rolling_3mo_mean[n_long - 1:-n_forecast] * n_forecast,
+    std_long_term=rolling_10yr_std[n_short - 1:-n_forecast] * n_forecast**0.5,
+    std_short_term=rolling_3mo_std[n_long - 1:-n_forecast] * n_forecast**0.5,
+    price_range=price_range,
+    volatility_range=volatility_range,
+    price_vol_range_interaction=price_vol_range_interaction,
+    next_month_ret=next_month_ret,
+)
 
-```python
-mu, sigma = norm_rets.mean(), norm_rets.std()
-f"{mu:>6.4}, {sigma:>6.2}"
+d_aligned = pd.DataFrame(d_aligned).set_index('date')
 ```
 
 ```python
-fig, ax = plt.subplots(figsize=(10,5))
+d_aligned.head()
+```
 
-_, bins, _ = ax.hist(
-    norm_rets, 
-    bins=201, 
+```python
+d_aligned.tail()
+```
+
+## Dristibution of tagret | Market evenironment
+
+```python
+decline_flag = in_market_decline(d_aligned.index.values, market_declines)
+```
+
+```python
+target = d_aligned.next_month_ret.values
+mu_a, sigma_a = target.mean(), target.std()
+mu_r, sigma_r = target[~decline_flag].mean(), target[~decline_flag].std()
+mu_d, sigma_d = target[decline_flag].mean(), target[decline_flag].std()
+print(f"All      : {mu_a:>8.4%}, {sigma_a:>6.2%}")
+print(f"Rising   : {mu_r:>8.4%}, {sigma_r:>6.2%}")
+print(f"Declining: {mu_d:>8.4%}, {sigma_d:>6.2%}")
+```
+
+```python
+fig, axs = plt.subplots(nrows=3, figsize=(10,10), sharex=True)
+
+axs[0].set_title(f"Distribution of rolling monthly returns\nmean: {mu_a:>6.2%} std: {sigma_a:>6.2%}")
+_, bins, _ = axs[0].hist(
+    target, 
+    bins=101,
     density=True, 
     edgecolor="black", 
     alpha=0.5, 
     label="Observed returns"
 )
-_ = ax.plot(
+_ = axs[0].plot(
     bins,
-    stats.norm(loc=mu, scale=sigma).pdf(bins),
+    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
+    color="black",
+    linestyle="--",
+    label="N(mean, std)"
+)
+_ = axs[0].legend()
+
+axs[1].set_title(f"Periods when market was rising\nmean: {mu_r:>6.2%} std: {sigma_r:>6.2%}")
+_ = axs[1].hist(
+    target[~decline_flag], 
+    bins=bins, 
+    density=True,
+    color="green",
+    edgecolor="black", 
+    alpha=0.5, 
+    label="Rising market returns"
+)
+_ = axs[1].plot(
+    bins,
+    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
+    color="black",
+    linestyle="--"
+)
+
+axs[2].set_title(f"Periods when market was declining\nmean: {mu_d:>6.2%} std: {sigma_d:>6.2%}")
+axs[2].set_xlabel("log return")
+_ = axs[2].hist(
+    target[decline_flag], 
+    bins=bins, 
+    density=True,
+    color="red",
+    edgecolor="black", 
+    alpha=0.5, 
+    label="Declining market returns"
+)
+_ = axs[2].plot(
+    bins,
+    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
+    color="black",
     linestyle="--"
 )
 ```
 
-## Hierarchical Mixture Model
+## Hierarchical Regression Model
 
 
 ### Model specification
