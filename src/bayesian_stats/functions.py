@@ -312,7 +312,7 @@ def one_hot_encode(
 def get_rolling_windows(
     arr: NDArray[Any], window_size: int, stride: int = 1
 ) -> NDArray[Any]:
-    """Generate a rolling window of input based on a target window and step size
+    """Generate rolling windows of input array.
 
     Parameters
     ----------
