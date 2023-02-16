@@ -239,44 +239,73 @@ d_aligned.head()
 d_aligned.tail()
 ```
 
-## Dristibution of tagret | Market evenironment
+## Downsample and split out columns
 
 ```python
-decline_flag = in_market_decline(d_aligned.index.values, market_declines)
+d_sample = d_aligned.sample(frac=0.2)
+d_sample.shape
 ```
 
 ```python
-target = d_aligned.next_month_ret.values
-mu_a, sigma_a = target.mean(), target.std()
-mu_r, sigma_r = target[~decline_flag].mean(), target[~decline_flag].std()
-mu_d, sigma_d = target[decline_flag].mean(), target[decline_flag].std()
-print(f"All      : {mu_a:>8.4%}, {sigma_a:>6.2%}")
-print(f"Rising   : {mu_r:>8.4%}, {sigma_r:>6.2%}")
-print(f"Declining: {mu_d:>8.4%}, {sigma_d:>6.2%}")
+regressors = d_sample[['price_range', 'volatility_range', 'price_vol_range_interaction']].values
+regressors = (regressors - 0.5) / 0.5  # Scale to [-1, 1]
+print(regressors.shape)
+
+current_means = d_sample[['mean_long_term', 'mean_short_term']].values
+current_stds = d_sample[['std_long_term', 'std_short_term']].values
+print(current_means.shape, current_stds.shape)
+
+target = d_sample.next_month_ret.values
+print(target.shape)
+```
+
+## Dristibution of tagret | Market evenironment
+
+```python
+decline_flag = in_market_decline(d_sample.index.values, market_declines)
+```
+
+```python
+df_a, mu_a, sigma_a = stats.t.fit(data=target)
+df_r, mu_r, sigma_r = stats.t.fit(target[~decline_flag])
+df_d, mu_d, sigma_d = stats.t.fit(target[decline_flag])
+print(f"           {'Mean':>8}  {'Std':>6}  {'df':>6}")
+print(f"All        {mu_a:>8.4%}  {sigma_a:>6.2%}  {df_a:>6.2}")
+print(f"Rising     {mu_r:>8.4%}  {sigma_r:>6.2%}  {df_r:>6.2}")
+print(f"Declining  {mu_d:>8.4%}  {sigma_d:>6.2%}  {df_d:>6.2}")
 ```
 
 ```python
 fig, axs = plt.subplots(nrows=3, figsize=(10,10), sharex=True)
 
-axs[0].set_title(f"Distribution of rolling monthly returns\nmean: {mu_a:>6.2%} std: {sigma_a:>6.2%}")
 _, bins, _ = axs[0].hist(
     target, 
     bins=101,
-    density=True, 
+    density=True,
+    color="black",
     edgecolor="black", 
     alpha=0.5, 
-    label="Observed returns"
+    label="All returns"
 )
 _ = axs[0].plot(
     bins,
     stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
+    color="orange",
+    linestyle="--",
+    linewidth=2,
+    label="N(mean_all, std_all)"
+)
+_ = axs[0].plot(
+    bins,
+    stats.t(df_a, loc=mu_a, scale=sigma_a).pdf(bins),
     color="black",
     linestyle="--",
-    label="N(mean, std)"
+    linewidth=2,
+    label="t(mean_all, std_all, df_all)"
 )
-_ = axs[0].legend()
+_ = axs[0].legend(loc='upper left')
 
-axs[1].set_title(f"Periods when market was rising\nmean: {mu_r:>6.2%} std: {sigma_r:>6.2%}")
+
 _ = axs[1].hist(
     target[~decline_flag], 
     bins=bins, 
@@ -288,12 +317,23 @@ _ = axs[1].hist(
 )
 _ = axs[1].plot(
     bins,
-    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
+    stats.t(df_a, loc=mu_a, scale=sigma_a).pdf(bins),
     color="black",
-    linestyle="--"
+    linestyle="--",
+    linewidth=2,
+    label="t(mean_all, std_all, df_all)",
 )
+_ = axs[1].plot(
+    bins,
+    stats.t(df_r, loc=mu_r, scale=sigma_r).pdf(bins),
+    color="green",
+    linestyle="--",
+    linewidth=2,
+    label="t(mean_rising, std_rising, df_rising)"
+)
+_ = axs[1].legend(loc='upper left')
 
-axs[2].set_title(f"Periods when market was declining\nmean: {mu_d:>6.2%} std: {sigma_d:>6.2%}")
+
 axs[2].set_xlabel("log return")
 _ = axs[2].hist(
     target[decline_flag], 
@@ -308,8 +348,19 @@ _ = axs[2].plot(
     bins,
     stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
     color="black",
-    linestyle="--"
+    linestyle="--",
+    linewidth=2,
+    label="t(mean_all, std_all, df_all)",
 )
+_ = axs[2].plot(
+    bins,
+    stats.t(df_d, loc=mu_d, scale=sigma_d).pdf(bins),
+    color="red",
+    linestyle="--",
+    linewidth=2,
+    label="t(mean_declining, std_declining, df_declining)"
+)
+_ = axs[2].legend(loc='upper left')
 ```
 
 ## Hierarchical Regression Model
@@ -318,31 +369,31 @@ _ = axs[2].plot(
 ### Model specification
 
 ```python
-with pm.Model() as mm_model:
-    # Priors for unknown means of mixture distributions
-    mu_a = pm.Normal("mu_a", mu=-1, sigma=10)
-    mu_b = pm.Normal("mu_b", mu=1, sigma=10)
+with pm.Model() as model:
+    # Skeptical priors for unknown coefficients
+    coeffs = pm.Laplace("coeffs", mu=0, b=(1 / 4**0.5), shape=(3,5))
     
-    # Prior for unknown common std of mixture distributions
-    sigma = pm.InverseGamma("variance", **get_invgamma_params(variance_prior=1**2, effective_sample_size=1))**0.5
+    # Apply coeffs to regressors
+    # (N, 3, 1) * (1, 3, 5) -> (N, 3, 5)
+    wt_regressors = regressors[..., None] * coeffs[None, ...]
     
-    # Component distributions
-    components = [
-        pm.Normal.dist(mu=mu_a, sigma=sigma),
-        pm.Normal.dist(mu=mu_b, sigma=sigma),
-    ]
+    # Derive distribution params from weighted regressors
+    mu_wts = pm.Deterministic("mu_wts", 0.5 + wt_regressors[..., 1:3].sum(1))
+    mu = pm.Deterministic("mu", (current_means * mu_wts).sum(-1))
     
-    # Prior for mixture wts
-    wts = pm.Dirichlet("wts", a=np.array([1.0, 1.0]))
+    sigma_wts = pm.Deterministic("sigma_wts", 0.5 + wt_regressors[..., 3:].sum(1))
+    sigma = pm.Deterministic("sigma", np.exp((np.log(current_stds) * sigma_wts).sum(-1)))
+    
+    df = pm.Deterministic("df", np.exp(np.log(5) + wt_regressors[..., 0].sum(-1)))
     
     # Likelihood of latent mixture class
-    like = pm.Mixture('like', w=wts, comp_dists=components, observed=data.y)
+    like = pm.StudentT('like', mu=mu, sigma=sigma, nu=df, observed=target)
     
-mm_model
+model
 ```
 
 ```python
-pm.model_to_graphviz(mm_model)
+pm.model_to_graphviz(model)
 ```
 
 ### Model fitting
@@ -352,18 +403,22 @@ RANDOM_SEED = 58
 rng = np.random.default_rng(RANDOM_SEED)
 
 # Number of chains
-chains = 5
+chains = 3
 
 # Number of samples per chain
-draws = 5000
+draws = 3000
 
-with mm_model:
+with model:
     # draw posterior samples
-    trace_mm_model = pm.sample(draws=draws, chains=chains)
+    trace = pm.sample(draws=draws, chains=chains)
 ```
 
 ```python
-az.summary(trace_mm_model)
+trace
+```
+
+```python
+az.summary(trace.posterior.coeffs)
 ```
 
 ```python
