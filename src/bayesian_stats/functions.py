@@ -12,8 +12,9 @@ __all__ = [
     "get_gelman_rubin_diagnostic",
     "get_highest_density_interval",
     "get_invgamma_params",
-    "one_hot_encode",
+    "get_probability_non_zero",
     "get_rolling_windows",
+    "one_hot_encode",
 ]
 
 
@@ -273,40 +274,24 @@ def get_invgamma_params(
     )
 
 
-def one_hot_encode(
-    x: Union[pd.Series, NDArray[Any]], var_name: str = None
-) -> pd.DataFrame:
-    """One-hot-encode a categorical variable
+def get_probability_non_zero(x: NDArray[np.number]) -> float:
+    """Probability a parameter's value is non-zero (either > 0 or < 0) based on
+    its sampling distribution.
+
+    Useful for assessing the probability that a regression coefficient is non-zero.
 
     Parameters
     ----------
-    x: Union[pd.Series, ndarray], shape=(N,)
-        Categorical variable to one-hot-encode
-    var_name: str, optional
-        Original name of variable
-        (default = None)
+    x: NDArray[np.number]
+        Samples.
 
     Returns
     -------
-    one_hot_encoding: pd.DataFrame, shape=(N, M)
-        One-hot-encoded variable with M levels.
+    probability: float
     """
-    if var_name is None:
-        if isinstance(x, pd.Series):
-            var_name = x.name
-        else:
-            var_name = ""
-
-    if isinstance(x, pd.Series):
-        x = x.values
-
-    levels = np.unique(x)
-
-    ohe = x.reshape(-1, 1)[..., None] == levels.reshape(1, -1)[None]
-    df_ohe = pd.DataFrame(
-        data=ohe.all(1).astype(float), columns=[f"{var_name}_{lvl}" for lvl in levels]
-    )
-    return df_ohe
+    p_gt = (x > 0).mean().item()
+    p_lt = (x < 0).mean().item()
+    return max(p_gt, p_lt) - min(p_gt, p_lt)
 
 
 def get_rolling_windows(
@@ -361,3 +346,39 @@ def get_rolling_windows(
     strides = (arr.strides[0],) + arr.strides
     rolled = np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
     return rolled[np.arange(0, shape[0], stride)]
+
+
+def one_hot_encode(
+    x: Union[pd.Series, NDArray[Any]], var_name: str = None
+) -> pd.DataFrame:
+    """One-hot-encode a categorical variable
+
+    Parameters
+    ----------
+    x: Union[pd.Series, ndarray], shape=(N,)
+        Categorical variable to one-hot-encode
+    var_name: str, optional
+        Original name of variable
+        (default = None)
+
+    Returns
+    -------
+    one_hot_encoding: pd.DataFrame, shape=(N, M)
+        One-hot-encoded variable with M levels.
+    """
+    if var_name is None:
+        if isinstance(x, pd.Series):
+            var_name = x.name
+        else:
+            var_name = ""
+
+    if isinstance(x, pd.Series):
+        x = x.values
+
+    levels = np.unique(x)
+
+    ohe = x.reshape(-1, 1)[..., None] == levels.reshape(1, -1)[None]
+    df_ohe = pd.DataFrame(
+        data=ohe.all(1).astype(float), columns=[f"{var_name}_{lvl}" for lvl in levels]
+    )
+    return df_ohe
