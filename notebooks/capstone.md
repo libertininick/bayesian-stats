@@ -25,22 +25,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
+import scipy
 import statsmodels.api as sm
 from dotenv import load_dotenv
 from numpy import ndarray
 from scipy import stats
+from statsmodels.nonparametric.kde import KDEUnivariate
 
 from bayesian_stats import (
-    get_auto_corr,
-    get_effective_sample_size,
-    get_gelman_rubin_diagnostic,
     get_highest_density_interval,
-    get_invgamma_params,
-    one_hot_encode,
+    get_probability_non_zero,
     get_rolling_windows,
+    one_hot_encode,
 )
-
-from bayesian_stats.find_declines import find_market_declines, in_market_decline
 
 # Load environment variables from .env
 load_dotenv()
@@ -53,52 +50,33 @@ mpl.rcParams['figure.facecolor'] = 'white'
 mpl.rcParams['axes.facecolor'] = 'white'
 ```
 
+```python
+n = 100
+x = np.random.randn(n, 120)
+
+x[:,:100] = np.random.randn(100)
+x = np.cumsum(x, -1)
+
+fig, ax = plt.subplots(figsize=(10,5))
+for i in range(n):
+    ax.plot(x[i], color="black", alpha=0.05)
+    
+ax.axvline(x=99, color="red", linestyle="--")
+ax.set_xticks([])
+ax.set_yticks([])
+# ax.spines[['left']].set_visible(False)
+```
+
 # Data
 
 ```python
 DATA_DIR = Path(os.environ.get("DATA_DIR"))
 data = pd.read_csv(DATA_DIR.joinpath("sp_500.csv"))
-
-print(data.shape)
-print(data.head(5))
-```
-
-## Market environment: Rising vs. Declining
-
-```python
 dates = pd.to_datetime(data.Date).values
 prices = data.Close.values
 
-market_declines = find_market_declines(dates=dates, prices=prices)
-
-
-n_declines = len(market_declines)
-n_decline_days = sum(md.length for md in market_declines)
-
-print(f"{n_declines} declines")
-print(f"{n_decline_days/len(prices):.0%} of time in decline")
-print(f"Size: {np.quantile([md.size for md in market_declines], q=[0, 0.25, 0.5, 0.75, 1]).round(2)}")
-print(f"Length: {np.quantile([md.length for md in market_declines], q=[0, 0.25, 0.5, 0.75, 1]).round(0)}")
-```
-
-```python
-fig, ax = plt.subplots(figsize=(15, 7))
-
-ax.set_title("S&P 500 Index\n1928-01-04 to 2022-10-21")
-ax.set_yscale("log")
-ax.set_xlabel("Date")
-ax.set_ylabel("Price (log scale)")
-ax.plot(dates, prices, color="black")
-
-for i, md in enumerate(market_declines):
-    ax.axvspan(
-        md.start, 
-        md.end, 
-        color='red', 
-        alpha=0.5,
-        label = None if i else "Market Decline",
-    )
-_ = ax.legend(fontsize=14, loc='upper left')
+print(data.shape)
+print(data.head(5))
 ```
 
 ## Log returns
@@ -116,279 +94,282 @@ prices= prices[1:]
 ## Rolling windows
 
 ```python
-# Long Term := 10 years
-n_long = 10 * 252
+# Volatility Window := 3 months
+vol_window_len = 3 * 21
 
-# Short Term := 3 months
-n_short = 3 * 21
+# Longer Term Context Window := 10 years
+ctx_window_len = 10 * 252
 
-windows_long = get_rolling_windows(idxs, n_long)
-windows_short = get_rolling_windows(idxs, n_short)
+# Forecast Window
+forecast_len = 21
+
+vol_windows = get_rolling_windows(idxs, vol_window_len)
+ctx_windows = get_rolling_windows(idxs, ctx_window_len)
+forecast_windows = get_rolling_windows(idxs, forecast_len)
 ```
 
-### Rolling 10-yr price range
+### Rolling volatility (3-months)
 
 ```python
-rolling_prices = prices[windows_long]
-rolling_min_price = rolling_prices.min(-1)
-rolling_max_price = rolling_prices.max(-1)
-rolling_price_range = (rolling_prices[:,-1] - rolling_min_price) / (rolling_max_price - rolling_min_price)
+rolling_vol = np.mean(log_returns[vol_windows]**2, -1)**0.5
 ```
 
-```python
-fig, ax = plt.subplots(figsize=(15, 7))
-ax.plot(dates[n_long - 1:], rolling_price_range)
-```
-
-### Rolling 3mo mean & std
+### Normalized price (10-yr windows)
 
 ```python
-rolling_3mo_returns = log_returns[windows_short]
-rolling_3mo_mean = rolling_3mo_returns.mean(-1)
-rolling_3mo_std = rolling_3mo_returns.std(-1)
-```
+# Take log of prices
+z = np.log(prices)
 
-```python
-fig, ax = plt.subplots(figsize=(15, 7))
-ax.plot(dates[n_short - 1:], rolling_3mo_std)
-```
+# 10yr rolling mean and std of 3mo Vol
+rolling_z = z[ctx_windows]
+z_mean = rolling_z.mean(-1)
+z_std = rolling_z.std(-1)
 
-### Rolling 10yr mean & std
+# Normalize price by rolling mean and std
+price_norm = (rolling_z[:, -1] - z_mean) / z_std
+print(np.quantile(price_norm, q=[0.05, 0.25, 0.5, 0.75, 0.95]))
 
-```python
-rolling_10yr_returns = log_returns[windows_long]
-rolling_10yr_mean = rolling_10yr_returns.mean(-1)
-rolling_10yr_std = rolling_10yr_returns.std(-1)
-```
-
-```python
-fig, ax = plt.subplots(figsize=(15, 7))
-ax.plot(dates[n_long - 1:], rolling_10yr_std)
-```
-
-### Rolling 10-yr 3-month volatility range
-
-```python
-rolling_10yrs_3mo_std = rolling_3mo_std[windows_long[:-(n_short - 1)]]
-rolling_min_3mo_std = rolling_10yrs_3mo_std.min(-1)
-rolling_max_3mo_std = rolling_10yrs_3mo_std.max(-1)
-rolling_3mo_std_range = (rolling_10yrs_3mo_std[:,-1] - rolling_min_3mo_std) / (rolling_max_3mo_std - rolling_min_3mo_std)
-```
-
-```python
-fig, ax = plt.subplots(figsize=(15, 7))
-ax.plot(dates[n_short + n_long - 2:], rolling_3mo_std_range)
-```
-
-```python
-n_diff = len(rolling_price_range) - len(rolling_3mo_std_range)
-```
-
-```python
-n_bins = 5
-bins = np.quantile(rolling_price_range[n_diff:], q=np.arange(0, 1, 1/n_bins))
-bin_labels = np.digitize(rolling_price_range[n_diff:], bins) - 1
-print(np.unique(bin_labels, return_counts=True))
-
-fig, axs = plt.subplots(ncols=n_bins, figsize=(15, 7), sharey=True)
-for i in range(n_bins):
-    axs[i].boxplot(
-        rolling_3mo_std_range[bin_labels == i],
-        sym='',                                 # No fliers
-        whis=(5, 95),                           # 5% and 95% whiskers
-    )
-    axs[i].set_xlabel(f"{rolling_price_range[n_diff:][bin_labels == i].mean():.0%}")
-# ax.scatter(rolling_price_range, rolling_vol_ratio, alpha=0.25)
-```
-
-## Aligned data
-
-```python
-n_forecast = 21
-cumulative_ret = np.cumsum(log_returns[n_long + n_short - 2:])
-next_month_ret = cumulative_ret[n_forecast:] - cumulative_ret[:-n_forecast]
-
-# Root explanitory factors
-price_range=rolling_price_range[n_short - 1:-n_forecast]
-volatility_range=rolling_3mo_std_range[:-n_forecast]
-price_vol_range_interaction = (
-    (2 * price_range * volatility_range) 
-    / (price_range + volatility_range + 1e-6)
+fig, axs = plt.subplots(nrows=2, figsize=(10,10))
+_ = axs[0].plot(dates[-len(price_norm):], price_norm)
+_ = axs[1].hist(
+    price_norm,
+    bins=51,
+    edgecolor="black",
+    alpha=0.5,
 )
+```
+
+### Normalized 3-month volatility (10-yr windows)
+
+```python
+# Take log of volatility
+z = np.log(rolling_vol)
+
+# 10yr rolling mean and std of 3mo Vol
+rolling_z = z[ctx_windows[:-(vol_window_len - 1)]]
+z_mean = rolling_z.mean(-1)
+z_std = rolling_z.std(-1)
+
+# Normalize volatility by rolling mean and std
+volatility_norm = (rolling_z[:, -1] - z_mean) / z_std
+print(np.quantile(volatility_norm, q=[0.05, 0.25, 0.5, 0.75, 0.95]))
+
+fig, axs = plt.subplots(nrows=2, figsize=(10,10))
+_ = axs[0].plot(dates[-len(volatility_norm):], volatility_norm)
+_ = axs[1].hist(
+    volatility_norm,
+    bins=51,
+    edgecolor="black",
+    alpha=0.5,
+)
+```
+
+## Price - Volatatiltiy Environments
+
+```python
+# Find min data length among rolling variables
+n = min(len(price_norm), len(volatility_norm))
+
+# Align series
+price_norm = price_norm[-n:]
+volatility_norm = volatility_norm[-n:]
+```
+
+```python
+n_env_bins = 3
+
+env_labels = []
+for var in [price_norm, volatility_norm]:
+    bins = np.quantile(var, q=np.arange(0, 1, 1/n_env_bins)) 
+    env_labels.append(np.digitize(var, bins) - 1)
+
+lbl = {0: "L", 2: "H"}
+env_labels = np.array([
+    f"P{lbl[p]}_V{lbl[v]}" if p != 1 and v != 1 else "baseline"
+    for p, v in np.stack(env_labels, axis=-1)
+])
+
+envs, cts = np.unique(env_labels, return_counts=True)
+
+for env, ct in zip(envs, cts):
+    print(f"{env:<15} {ct/len(env_labels):>8.1%}")
+```
+
+## Generate target and align
+
+```python
+cumulative_ret = np.cumsum(log_returns[-n:])
+next_month_ret = cumulative_ret[forecast_len:] - cumulative_ret[:-forecast_len]
 
 d_aligned = dict(
-    date=dates[n_long + n_short - 2:-n_forecast],
-    mean_long_term=rolling_10yr_mean[n_short - 1:-n_forecast] * n_forecast,
-    mean_short_term=rolling_3mo_mean[n_long - 1:-n_forecast] * n_forecast,
-    std_long_term=rolling_10yr_std[n_short - 1:-n_forecast] * n_forecast**0.5,
-    std_short_term=rolling_3mo_std[n_long - 1:-n_forecast] * n_forecast**0.5,
-    price_range=price_range,
-    volatility_range=volatility_range,
-    price_vol_range_interaction=price_vol_range_interaction,
-    next_month_ret=next_month_ret,
+    date=dates[-n:-forecast_len],
+    price_norm=price_norm[:-forecast_len],
+    volatility_norm=volatility_norm[:-forecast_len],
+    environment=env_labels[:-forecast_len],
+    target=next_month_ret,
 )
 
 d_aligned = pd.DataFrame(d_aligned).set_index('date')
-```
-
-```python
 d_aligned.head()
-```
-
-```python
-d_aligned.tail()
 ```
 
 ## Downsample and split out columns
 
 ```python
 d_sample = d_aligned.sample(frac=0.2)
+
+# One-hot-encode environments
+environments = ["baseline", 'PL_VH', 'PL_VL', 'PH_VL', 'PH_VH']
+env_ohe = (
+    one_hot_encode(d_sample.environment, var_name="env")
+    .loc[:, [f"env_{env}" for env in environments[1:]]]
+)
+
+# Normalize target
+tgt_mean = d_sample.target.mean()
+tgt_std = d_sample.target.std()
+d_sample["target"] = (d_sample.target - tgt_mean) / tgt_std
+
 d_sample.shape
 ```
 
-```python
-regressors = d_sample[['price_range', 'volatility_range', 'price_vol_range_interaction']].values
-regressors = (regressors - 0.5) / 0.5  # Scale to [-1, 1]
-print(regressors.shape)
-
-current_means = d_sample[['mean_long_term', 'mean_short_term']].values
-current_stds = d_sample[['std_long_term', 'std_short_term']].values
-print(current_means.shape, current_stds.shape)
-
-target = d_sample.next_month_ret.values
-print(target.shape)
-```
-
-## Dristibution of tagret | Market evenironment
+### Distribuition of returns
 
 ```python
-decline_flag = in_market_decline(d_sample.index.values, market_declines)
-```
+MLE_fit_norm = stats.norm.fit(d_sample.target)
+print(MLE_fit_norm)
+MLE_fit_t = stats.t.fit(d_sample.target)
+print(MLE_fit_t)
 
-```python
-df_a, mu_a, sigma_a = stats.t.fit(data=target)
-df_r, mu_r, sigma_r = stats.t.fit(target[~decline_flag])
-df_d, mu_d, sigma_d = stats.t.fit(target[decline_flag])
-print(f"           {'Mean':>8}  {'Std':>6}  {'df':>6}")
-print(f"All        {mu_a:>8.4%}  {sigma_a:>6.2%}  {df_a:>6.2}")
-print(f"Rising     {mu_r:>8.4%}  {sigma_r:>6.2%}  {df_r:>6.2}")
-print(f"Declining  {mu_d:>8.4%}  {sigma_d:>6.2%}  {df_d:>6.2}")
-```
+dist_norm = stats.norm(*MLE_fit_norm)
+dist_t = stats.t(*MLE_fit_t)
 
-```python
-fig, axs = plt.subplots(nrows=3, figsize=(10,10), sharex=True)
-
-_, bins, _ = axs[0].hist(
-    target, 
+fig, ax = plt.subplots(figsize=(10,5))
+_, bins, _ = ax.hist(
+    d_sample.target,
     bins=101,
     density=True,
+    alpha=0.5,
+)
+ax.plot(
+    bins,
+    dist_norm.pdf(bins),
     color="black",
-    edgecolor="black", 
-    alpha=0.5, 
-    label="All returns"
-)
-_ = axs[0].plot(
-    bins,
-    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
-    color="orange",
+    linewidth=1,
     linestyle="--",
-    linewidth=2,
-    label="N(mean_all, std_all)"
+    label="MLE Normal(mu=0.0, sigma=1.0)"
 )
-_ = axs[0].plot(
+ax.plot(
     bins,
-    stats.t(df_a, loc=mu_a, scale=sigma_a).pdf(bins),
+    dist_t.pdf(bins),
     color="black",
-    linestyle="--",
-    linewidth=2,
-    label="t(mean_all, std_all, df_all)"
+    linewidth=1,
+    linestyle="-",
+    label="MLE t(mu=0.07, sigma=0.73, df=4.34)"
 )
-_ = axs[0].legend(loc='upper left')
+# ax.axvline(x=0, color="black", linewidth=0.5)
 
+ax.set_xlabel("Normalized Return")
+ax.set_yticks([])
+ax.spines[['left']].set_visible(False)
+ax.set_title(
+    "Distribution of observed 1 month (normalized) returns\nS&P 500 1938 - 2022",
+    loc="left"
+)
+_ = ax.legend()
 
-_ = axs[1].hist(
-    target[~decline_flag], 
-    bins=bins, 
-    density=True,
-    color="green",
-    edgecolor="black", 
-    alpha=0.5, 
-    label="Rising market returns"
-)
-_ = axs[1].plot(
-    bins,
-    stats.t(df_a, loc=mu_a, scale=sigma_a).pdf(bins),
-    color="black",
-    linestyle="--",
-    linewidth=2,
-    label="t(mean_all, std_all, df_all)",
-)
-_ = axs[1].plot(
-    bins,
-    stats.t(df_r, loc=mu_r, scale=sigma_r).pdf(bins),
-    color="green",
-    linestyle="--",
-    linewidth=2,
-    label="t(mean_rising, std_rising, df_rising)"
-)
-_ = axs[1].legend(loc='upper left')
-
-
-axs[2].set_xlabel("log return")
-_ = axs[2].hist(
-    target[decline_flag], 
-    bins=bins, 
-    density=True,
-    color="red",
-    edgecolor="black", 
-    alpha=0.5, 
-    label="Declining market returns"
-)
-_ = axs[2].plot(
-    bins,
-    stats.norm(loc=mu_a, scale=sigma_a).pdf(bins),
-    color="black",
-    linestyle="--",
-    linewidth=2,
-    label="t(mean_all, std_all, df_all)",
-)
-_ = axs[2].plot(
-    bins,
-    stats.t(df_d, loc=mu_d, scale=sigma_d).pdf(bins),
-    color="red",
-    linestyle="--",
-    linewidth=2,
-    label="t(mean_declining, std_declining, df_declining)"
-)
-_ = axs[2].legend(loc='upper left')
 ```
 
-## Hierarchical Regression Model
+### Summary of Environments
 
+```python
+env_summary = dict()
+for grp_lbl, grp in d_sample.groupby("environment"):
+    df, mu, sigma = stats.t.fit(grp.target)
+    env_summary[grp_lbl] = dict(
+        count=len(grp),
+        mu=mu,
+        sigma=sigma,
+        df=df,
+    )
+env_summary = pd.DataFrame(env_summary).T
+env_summary
+```
+
+## Model
+
+
+## Priors
+
+```python
+# Non-informative baslines 
+x = np.linspace(-5, 5, 1001)
+
+fig, axs = plt.subplots(ncols=3, figsize=(15,5), sharey=True)
+
+# Priors for baseline parameters
+# Mean
+axs[0].plot(
+    x,
+    stats.norm(loc=0, scale=10).pdf(x),
+    color="black",
+
+)
+axs[0].set_xlabel("mean (mu) parameter")
+axs[0].set_ylabel("Prior density")
+axs[0].set_title(
+    "Prior distribution for baseline return distribution parameters\n~ StudenT(mu, sigma, df)",
+    loc="left"
+)
+
+# Standard Deviation
+axs[1].plot(
+    np.exp(x)**0.25,
+    stats.norm(loc=0, scale=10).pdf(x),
+    color="black",
+
+)
+axs[1].set_xlabel("standard deviation (sigma) parameter")
+
+
+# Degrees of freedom
+axs[2].plot(
+    np.exp(x)**0.5,
+    stats.norm(loc=0, scale=10).pdf(x),
+    color="black",
+
+)
+axs[2].set_xlabel("degress of freedom (df) parameter")
+# axs[0].plot(, d)
+```
 
 ### Model specification
 
 ```python
 with pm.Model() as model:
-    # Skeptical priors for unknown coefficients
-    coeffs = pm.Laplace("coeffs", mu=0, b=(1 / 4**0.5), shape=(3,5))
     
-    # Apply coeffs to regressors
-    # (N, 3, 1) * (1, 3, 5) -> (N, 3, 5)
-    wt_regressors = regressors[..., None] * coeffs[None, ...]
+    # Priors
+    baseline_params = pm.Normal("baseline_params", mu=0, sigma=10, shape=3)
+    env_coeffs = pm.Laplace("environment_coeffs", mu=0, b=1/2, shape=(4, 3))
+
+    # Apply environment adjustments to baseline parameters
+    env_indicators = env_ohe.values
+    param_adjments = env_indicators @ env_coeffs
+    params = param_adjments + baseline_params
     
-    # Derive distribution params from weighted regressors
-    mu_wts = pm.Deterministic("mu_wts", 0.5 + wt_regressors[..., 1:3].sum(1))
-    mu = pm.Deterministic("mu", (current_means * mu_wts).sum(-1))
+    # Apply deterministic transforms to parameters
+    mu = params[:, 0]
+    sigma = np.exp(params[:, 1])**0.25
+    df = np.exp(params[:, 2])**0.5
     
-    sigma_wts = pm.Deterministic("sigma_wts", 0.5 + wt_regressors[..., 3:].sum(1))
-    sigma = pm.Deterministic("sigma", np.exp((np.log(current_stds) * sigma_wts).sum(-1)))
-    
-    df = pm.Deterministic("df", np.exp(np.log(5) + wt_regressors[..., 0].sum(-1)))
-    
-    # Likelihood of latent mixture class
-    like = pm.StudentT('like', mu=mu, sigma=sigma, nu=df, observed=target)
-    
+    # Likelihood of observed returns
+    returns = pm.StudentT(
+        "returns",
+        mu=mu,
+        sigma=sigma,
+        nu=df,
+        observed=d_sample.target,
+    )
 model
 ```
 
@@ -411,102 +392,92 @@ draws = 3000
 with model:
     # draw posterior samples
     trace = pm.sample(draws=draws, chains=chains)
-```
-
-```python
-trace
-```
-
-```python
-az.summary(trace.posterior.coeffs)
-```
-
-```python
-az.plot_trace(trace_mm_model, combined=True)
-```
-
-## Posterior probability of latent group membership
-P(y_i from grp_k | data) = likelihood_grp_k(y_i) * wt_k / SUM(likelihood_grp_k(y_i) * wt_k, k=0, k=k)
-
-```python
-# poserior sample means for both dists & posterior std
-mu_a = np.array(trace_mm_model.posterior.mu_a).reshape(-1)
-mu_b = np.array(trace_mm_model.posterior.mu_b).reshape(-1)
-std = np.array(trace_mm_model.posterior.variance).reshape(-1)**0.5
-
-# Posterior dists for each group
-grp_a_dist = stats.norm(loc=mu_a, scale=std)
-grp_b_dist = stats.norm(loc=mu_b, scale=std)
-
-# poserior wt of each latent group
-wts = np.array(trace_mm_model.posterior.wts).reshape(-1, 2)
-
-mu_a.shape, mu_b.shape, std.shape, wts.shape
-```
-
-```python
-from typing import List
-
-def get_posterior_membership_probs(
-    y: float,
-    grp_dists: List[stats.rv_continuous],
-    grp_wts: ndarray
-) -> ndarray:
-    """Returns distribution of posterior membership probability of 
-    an observation to each latent group in the mixture
     
-    Parameters
-    ----------
-    y: float
-        Observation
-    grp_dists: List[stats.rv_continuous]
-        Posterior distributions for each group in mixture.
-    grp_wts: ndarray, shape=(n_posterior_samples, n_groups)
-        Posterior mixture probabilities for groups.
-        
-    Returns
-    -------
-    distributions: ndarray, shape=(n_posterior_samples, n_groups)
-    """
-    
-    # Liklihood of membership to each group based on posterior group distributions
-    likelihoods = np.stack([dist.pdf(y) for dist in grp_dists], axis=-1)
-    
-    posterior_membership_probs = (likelihoods * wts) / (likelihoods * wts).sum(axis=-1, keepdims=True)
-    
-    return posterior_membership_probs
+    # draw posterior perdictive samples
+    trace = pm.sample_posterior_predictive(trace, extend_inferencedata=True, random_seed=rng)
 ```
 
 ```python
-y = 0.1
+summary = az.summary(trace.posterior)
+summary
+```
 
-pmp = get_posterior_membership_probs(y, [grp_a_dist, grp_b_dist], wts)
-print(pmp.mean(0))
+```python
+probability_non_zero = np.zeros((4,3))
+for i in range(4):
+    for j in range(3):
+        probability_non_zero[i,j] = get_probability_non_zero(
+            trace.posterior.environment_coeffs[...,i,j].values
+        )
+```
 
-fig, axs = plt.subplots(nrows=2, figsize=(10,10))
-_ = axs[0].set_title("observed data")
-_ = axs[0].hist(data, bins=30)
-_ = axs[0].axvline(x=y, color="red")
-
-bins = np.linspace(0, 1, 100)
-_ = axs[1].set_title("Posterior probability distributions of group membership")
-_ = axs[1].hist(
-    pmp[:,0],
-    bins=bins,
-    alpha=0.5,
-    label="Group A",
+```python
+pd.DataFrame(
+    probability_non_zero,
+    index=environments[1:],
+    columns=["mu", "sigma", "df"]
 )
-_ = axs[1].hist(
-    np.array(pmp[:,1]),
-    bins=bins,
-    alpha=0.5,
-    label="Group B",
-)
-_ = axs[1].legend()
+             
 ```
 
 ```python
+baselines = summary["mean"][:3].values
+env_coeffs = summary["mean"][-12:].values.reshape(-1,3)
+env_dist_params = baselines[None, ...] + np.vstack((np.zeros((1,3)), env_coeffs))
 
+env_dist_params[:,1] = np.exp(env_dist_params[:,1])**0.25
+env_dist_params[:,2] = np.exp(env_dist_params[:,2])**0.5
+
+env_dist_params = pd.DataFrame(
+    env_dist_params,
+    index=environments,
+    columns=["mu", "sigma", "df"]
+)
+
+env_dist_params
+```
+
+```python
+labels = [
+    'baseline', 
+    'Price Low & Vol High',
+    'Price Low & Vol Low',
+    'Price High & Vol Low',
+    'Price High & Vol High',
+]
+
+colors = [
+    "black",
+    "red",
+    "purple",
+    "green",
+    "orange",
+]
+
+fig, ax = plt.subplots(figsize=(12,6))
+_, bins, _ = ax.hist(d_sample.target, bins=101, density=True, alpha=0.5)
+for i in range(len(env_dist_params)):
+    ax.plot(
+        bins,
+        stats.t(
+            env_dist_params.iloc[i,2],
+            loc=env_dist_params.iloc[i,0],
+            scale=env_dist_params.iloc[i,1],
+        ).pdf(bins),
+        color=colors[i],
+        label=labels[i],
+        linestyle="--" if i == 0 else '-',
+    )
+
+    
+ax.set_xlabel("Normalized Return")
+ax.set_yticks([])
+ax.spines[['left']].set_visible(False)
+ax.set_title(
+    "Distribution of observed 1 month (normalized) returns\nS&P 500 1938 - 2022",
+    loc="left"
+)
+_ = ax.legend(loc="upper left")
 ```
 
 ```python
