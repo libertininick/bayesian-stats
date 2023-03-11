@@ -1,4 +1,4 @@
-from typing import Any, Dict, Iterable, Union
+from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
@@ -19,14 +19,14 @@ __all__ = [
 
 
 def get_auto_corr(
-    x: NDArray[Any], lags: Union[int, Iterable[int], NDArray[np.int64], None] = None
+    x: NDArray[Any], lags: int | Iterable[int] | NDArray[np.int64] | None = None
 ) -> NDArray[np.float64]:
     """Auto-correlation of a vector for specific lags
 
     Parameters
     ----------
     x: NDArray[Any], shape=(N,)
-    lags: Union[int, Iterable[int], NDArray[np.int64]], None
+    lags: int | Iterable[int] | NDArray[np.int64] | None
         Lag or lags to calculate autocorrelation for.
         If lags is an integer, will assume the first ``m`` lags,
         where ``m`` is the value passed.
@@ -41,7 +41,7 @@ def get_auto_corr(
         Vector of auto-correlations
     """
     if x.ndim > 1:
-        raise ValueError(f"Input must be a 1d array")
+        raise ValueError("Input must be a 1d array")
 
     n = len(x)
 
@@ -55,12 +55,12 @@ def get_auto_corr(
         lags = np.array(lags)
 
     if lags.ndim != 1:
-        raise ValueError(f"Lags must be a 1d array")
+        raise ValueError("Lags must be a 1d array")
 
     lags = lags.astype(int)
 
     if lags.min() < 0:
-        raise ValueError(f"Min lag must >= 0")
+        raise ValueError("Min lag must >= 0")
 
     if lags.max() >= n - 1:
         raise ValueError(f"Max lag must < {n - 1}")
@@ -168,7 +168,7 @@ def get_gelman_rubin_diagnostic(
 
 
 def get_highest_density_interval(
-    x: NDArray[Any], confidence_level: float = 0.95, axis: Union[int, None] = None
+    x: NDArray[Any], confidence_level: float = 0.95, axis: int | None = None
 ) -> NDArray[Any]:
     """Highest Posterior Density credible interval (HDI)
 
@@ -251,7 +251,7 @@ def get_highest_density_interval(
 
 def get_invgamma_params(
     variance_prior: float, effective_sample_size: int
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Calculates the parameters for the inverse gamma distribution to use as the
     prior distribution for an unknown variance of a normal distribution.
 
@@ -264,7 +264,7 @@ def get_invgamma_params(
 
     Returns
     -------
-    Dict[str, float]
+    dict[str, float]
         alpha: float
         beta: float
     """
@@ -349,13 +349,13 @@ def get_rolling_windows(
 
 
 def one_hot_encode(
-    x: Union[pd.Series, NDArray[Any]], var_name: str = None
+    x: pd.Series | NDArray[Any], var_name: str | None = None
 ) -> pd.DataFrame:
     """One-hot-encode a categorical variable
 
     Parameters
     ----------
-    x: Union[pd.Series, ndarray], shape=(N,)
+    x: pd.Series | NDArray[Any], shape=(N,)
         Categorical variable to one-hot-encode
     var_name: str, optional
         Original name of variable

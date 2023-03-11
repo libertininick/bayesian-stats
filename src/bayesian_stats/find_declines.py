@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Union, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,8 +17,8 @@ def find_market_declines(
     prices: NDArray[np.float64],
     min_length: int = 21,
     min_size: float = -0.075,
-    market_declines: Union[List[MarketDecline], None] = None,
-) -> List[MarketDecline]:
+    market_declines: list[MarketDecline] | None = None,
+) -> list[MarketDecline]:
     """Builds market decline objects from a sequence of prices.
 
     Parameters
@@ -34,15 +33,15 @@ def find_market_declines(
     min_size: float, optional
         Minimum size of drawdown to be considered a decline (expressed as a negative number)
         (default = -7.5%)
-    market_declines: List[MarketDecline], optional
+    market_declines: list[MarketDecline], optional
         Running set of declines.
         Use for recursive call when finding additional declines in a long drawdown period.
         (default = None)
 
     Returns
     -------
-    market_declines: List[MarketDecline]
-      List of declines in price sequence that meet min length/size filter.
+    market_declines: list[MarketDecline]
+      list of declines in price sequence that meet min length/size filter.
     """
 
     if len(dates) != len(prices):
@@ -101,7 +100,7 @@ def find_market_declines(
 
 def in_market_decline(
     dates: NDArray[np.datetime64],
-    market_declines: List[MarketDecline],
+    market_declines: list[MarketDecline],
 ) -> NDArray[np.bool_]:
     "Flag whether a date is in a market decline period"
     masks = np.stack(
