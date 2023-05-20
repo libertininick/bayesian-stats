@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Certain data files
+/data/think-bayes/gss_bayes.csv
