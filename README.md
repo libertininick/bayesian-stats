@@ -1,11 +1,9 @@
 # bayesian-stats
-Sandbox repo for Bayesian statistics and modeling
+Sandbox repository for my journey learning Probabilistic Programming & Bayesian statistics
 
-## External libraries
-- [PyMC](https://www.pymc.io/welcome.html): PyMC is a probabilistic programming library for Python that allows users to build Bayesian models with a simple Python API and fit them using Markov chain Monte Carlo (MCMC) methods.
-- [ArviZ](https://python.arviz.org/en/stable/): ArviZ is a Python package for exploratory analysis of Bayesian models.
+## PPL libraries
 - [NumPyro](https://num.pyro.ai/en/stable/): NumPyro is a lightweight probabilistic programming library that provides a NumPy backend for Pyro.
-- [xarray](https://xarray.dev/): Xarray introduces labels in the form of dimensions, coordinates, and attributes on top of raw NumPy-like arrays.
+- [ArviZ](https://python.arviz.org/en/stable/): ArviZ is a Python package for exploratory analysis of Bayesian models.
 
 ## Create conda environment
 ```bash
@@ -18,16 +16,15 @@ conda create -y -n bayesian_stats \
     arviz \
     black \
     ipykernel \
+    ipympl \
     matplotlib \
     numpy \
     numpyro \
     pandas \
-    pymc \
-    python=3.10 \
+    python=3.11 \
     python-dotenv \
     python-graphviz \
-    scipy \
-    statsmodels
+    scipy
 
 # Activate bayesian_stats env
 conda activate bayesian_stats
