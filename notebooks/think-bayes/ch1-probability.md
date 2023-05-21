@@ -80,11 +80,11 @@ class Party(IntEnum):
 A marginal probability / marginal probability distribution is a probability that is not dependent (conditioned) on any other event or variable.
 - i.e. it is the unconditional probability of an event:
 - `P(female)` , `P(banker)` , `P(Democrat)` , `...`
-- Typically, we just say "probability" and not "marginal probability" because the marginal part only comes into play when we have to factor in anther event or variable(s).
-- In those cases, marginal variables are those variables in the subset of variables being retained for the probability calculation.
+- Typically, we just say "probability" and not "marginal probability" because the marginal part only comes into play when we have to factor in another event or variable(s).
+- In those cases, marginal variables are the subset of variables being retained for the probability calculation.
 	- The are called "marginal" because they're calculated by summing values in a table along rows or columns, and writing the sum in the margins of the table.
-- The distribution of the marginal variables (the marginal distribution) is obtained by marginalizing (that is, focusing on the sums in the margin) over the distribution of the variables being discarded
-- The discarded variables are said to have been marginalized out.
+- The other variables are said to have been marginalized out; because we've summed along the rows or columns containing counts for these variables
+    - thus, we no longer have any information about the distribution of those variables
 
 ```
                             Male  Female  | PartyTotal
