@@ -119,7 +119,6 @@ What is the probability the yellow piece came from Bag 1?
 - Likelihoods are not the raw proportions of yellow, but the likelihood of seeing a yellow vs a red one:
     - Bag 1: likelihood of seeing yellow vs red = `7% / 3%` = `2.33`
     - Bag 2: likelihood of seeing yellow vs red = `20% / 25%` = `0.8`
-- You're filtering down to the subset of each bag that is just red and yellow, and asking what's the likelihood of drawing a yellow?
     
 ```
    prior  likelihood  posterior
