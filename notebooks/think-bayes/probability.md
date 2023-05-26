@@ -100,9 +100,9 @@ OtherParty                   408     296  |        704
 ------------------------------------------------------
 SexTotal                   22779   26511       
 ```
-- Marginal probability of `Female` = `26511 / 49290`
+- Marginal probability of `Female` = `26511 / 49290` = `53.79%`
 - Marginal distribution of `Sex` variable: `[22779, 26511]`
-- Marginal probability of `StrongDemocrat` = `7884 / 49290`
+- Marginal probability of `StrongDemocrat` = `7884 / 49290` = `16.00%`
 - Marginal distribution of `PoliticalParty`:
 ```
 StrongDemocrat                7884
@@ -136,11 +136,11 @@ print(f"P(StrongDemocrat) = {p:.2%}")
 - Joint probability is the probability of two (or more) events happening together or being observed together
 - e.g. Probability of a person being a Female AND being a Democrat
 - The AND operation means we are combining two probabilities via conjunction
-	- The calculation of the joint probability is sometimes called the "product rule" of probability or the "chain rule" of probability.
+	- The calculation of the joint probability is sometimes called the "product rule" | "chain rule" of probability.
 - For independent events: `P(A,B) = P(A) * P(B)`
 - For dependent events/variables with observation overlap in a dataset: `P(A,B) = P(A) * P(B | A)`
-- Conjunction is commutative; `P(A,B) = P(B,A)` 
-- Joint probability of `Female & StrongDemocrat` = `4632 / 49290`
+- Conjunction is commutative (i.e. order doesn't matter); `P(A,B) = P(B,A)` 
+- Joint probability of `Female & StrongDemocrat` = `4632 / 49290` = `9.40%`
 
 ```python
 p = (
@@ -157,44 +157,44 @@ print(f"P(StrongDemocrat & female) = {p:.2%}")
 
 
 What is the probability that a respondent is a `StrongDemocrat`, given that they are a `Female`?
+```
+P(StrongDemocrat|female) = 17.47%
+```
 
 ```python
 females = sample_population[sample_population.sex == Sex.Female]
-p = (liberals.partyid == Party.StrongDemocrat).mean()
+p = (females.partyid == Party.StrongDemocrat).mean()
 
 print(f"P(StrongDemocrat|female) = {p:.2%}")
 ```
 
 ## Conditional Probability Is Not Commutative
-- P(A|B) != P(B|A)
+- The order of conditioning matters: P(A|B) != P(B|A)
+- The subset of respondents that are female is different than the subset that are strong Democrats.
 
 
-What is the probability that a respondent is female, given that they are a banker?
-
-```python
-# P(female | banker)
-bankers = sample_population[sample_population.indus10 == 6870]
-p = (bankers.sex == Sex.Female).mean()
-
-print(f"{len(bankers):,} banker samples")
-print(f"P(female|banker) = {p:.2%}")
+What is the probability that a respondent is a `Female`, given they are a `StrongDemocrat`?
+```
+P(female|StrongDemocrat) = 58.75%
+P(StrongDemocrat|female) = 17.47%
 ```
 
-What is the probability that a respondent is banker, given they are a female?
-
 ```python
-# P(banker | female)
-females = sample_population[sample_population.sex == Sex.Female]
-p = (females.indus10 == 6870).mean()
+strong_dems = sample_population[sample_population.partyid == Party.StrongDemocrat]
+p = (strong_dems.sex == Sex.Female).mean()
 
-print(f"{len(females):,} female samples")
-print(f"P(banker|female) = {p:.2%}")
+print(f"P(female|StrongDemocrat) = {p:.2%}")
 ```
 
 ## Condition and Conjunction
+- We can condition on more than one variable at time
+- The multiple conditioning variables are combined via conjunction
 
+What probability a respondent is female, given that they are a `StrongDemocrat` with `liberal` political views?What probability a respondent is female, given that they are a `StrongDemocrat` with `liberal` political views?
 
-What probability a respondent is female, given that they are a `StrongDemocrat` with `liberal` political views?
+```
+P(female|liberal, StrongDemocrat) = 58.54%
+```
 
 ```python
 liberal_strong_dems = sample_population[
@@ -212,40 +212,52 @@ print(f"P(female|liberal, StrongDemocrat) = {p:.2%}")
 - The conditional probability is the joint probability normalized by the (marginal) probability of one (or more) variables in the joint distribution
 - `P(A|B) = P(A,B) / P(B)`
 
+```
+P(StrongDemocrat) = 16.00%
+P(female, StrongDemocrat) = 9.40%
+P(female | StrongDemocrat) = 9.40% / 16.00% = 58.75%
+```
+
 ```python
-# P(banker)
-p_banker = (sample_population.indus10 == 6870).mean()
-print(f"P(banker) = {p_banker:.2%}")
+# P(StrongDemocrat)
+p_strong_dem = (sample_population.partyid == Party.StrongDemocrat).mean()
+print(f"P(StrongDemocrat) = {p_strong_dem:.2%}")
 
-# P(female, banker)
-p_female_banker = (
+# P(female, StrongDemocrat)
+p_female_and_strong_dem = (
     (sample_population.sex == Sex.Female) &
-    (sample_population.indus10 == 6870)
+    (sample_population.partyid == Party.StrongDemocrat)
 ).mean()
-print(f"P(female, banker) = {p_female_banker:.2%}")
+print(f"P(female, StrongDemocrat) = {p_female_and_strong_dem:.2%}")
 
-# P(female | banker)
-p_female_given_banker = p_female_banker / p_banker
-print(f"P(female | banker) = {p_female_given_banker:.2%}")
+# P(female | StrongDemocrat)
+p_female_given_strong_dem = p_female_and_strong_dem / p_strong_dem
+print(f"P(female | StrongDemocrat) = {p_female_given_strong_dem:.2%}")
 ```
 
 ## Joint probability from conditional
 - The probability of two events occurring together can be reframed as probability of the first event, multiplied by the probability of the second event GIVEN the first event has occurred.
 - `P(A,B) = P(B) * P(A|B)`
 
-```python
-# P(banker)
-p_banker = (sample_population.indus10 == 6870).mean()
-print(f"P(banker) = {p_banker:.2%}")
+```
+P(StrongDemocrat) = 16.00%
+P(female | StrongDemocrat) = 58.75%
+P(female, StrongDemocrat) = 16.00% * 58.75% = 9.40%
+```
 
-# P(female | banker)
-bankers = sample_population[sample_population.indus10 == 6870]
-p_female_given_banker = (bankers.sex == Sex.Female).mean()
-print(f"P(female | banker) = {p_female_given_banker:.2%}")
+```python
+# P(StrongDemocrat)
+p_strong_dem = (sample_population.partyid == Party.StrongDemocrat).mean()
+print(f"P(StrongDemocrat) = {p_strong_dem:.2%}")
+
+# P(female | StrongDemocrat)
+strong_dems = sample_population[sample_population.partyid == Party.StrongDemocrat]
+p_female_given_strong_dem = (strong_dems.sex == Sex.Female).mean()
+print(f"P(female | StrongDemocrat) = {p_female_given_strong_dem:.2%}")
 
 # P(female, banker)
-p_female_banker = p_banker * p_female_given_banker
-print(f"P(female, banker) = {p_female_banker:.2%}")
+p_female_and_strong_dem = p_strong_dem * p_female_given_strong_dem
+print(f"P(female, StrongDemocrat) = {p_female_and_strong_dem:.2%}")
 ```
 
 # Bayes's Theorem
@@ -256,23 +268,30 @@ print(f"P(female, banker) = {p_female_banker:.2%}")
 - Thus, `P(A) * P(B|A) = P(B) * P(A|B)`
 - Bayes's Theorem: `P(A|B) = P(A) * P(B|A) / P(B)`
 
+```
+P(female) = 53.79%
+P(StrongDemocrat|female) = 17.47%
+P(StrongDemocrat) = 16.00%
+P(female | StrongDemocrat) = 53.79% * 17.47% / 16.00% = 58.75%
+```
+
 ```python
 # P(female)
 p_female = (sample_population.sex == Sex.Female).mean()
 print(f"P(female) = {p_female:.2%}")
 
-# P(banker | female)
+# P(StrongDemocrat | female)
 females = sample_population[sample_population.sex == Sex.Female]
-p_banker_given_female = (females.indus10 == 6870).mean()
-print(f"P(banker|female) = {p_banker_given_female:.2%}")
+p_strong_dem_given_female = (females.partyid == Party.StrongDemocrat).mean()
+print(f"P(StrongDemocrat|female) = {p_strong_dem_given_female:.2%}")
 
-# P(banker)
-p_banker = (sample_population.indus10 == 6870).mean()
-print(f"P(banker) = {p_banker:.2%}")
+# P(StrongDemocrat)
+p_strong_dem = (sample_population.partyid == Party.StrongDemocrat).mean()
+print(f"P(StrongDemocrat) = {p_strong_dem:.2%}")
 
-# P(female | banker)
-p_female_given_banker = p_female * p_banker_given_female / p_banker
-print(f"P(female | banker) = {p_female_given_banker:.2%}")
+# P(female | StrongDemocrat)
+p_female_given_strong_dem = p_female * p_strong_dem_given_female / p_strong_dem
+print(f"P(female | StrongDemocrat) = {p_female_given_strong_dem:.2%}")
 ```
 
 ```python
