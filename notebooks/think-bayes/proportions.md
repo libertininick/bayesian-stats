@@ -38,7 +38,7 @@ print(f"{p_le_4h:.2%}")
 
 What is the probability a coin is materially biases towards heads ($P(heads) > 52.5\%$), given we flipped it 250 times and observed 140 heads?
 
-![Coin Flipping](coin-flipping-p-heads.png)
+![Coin Flipping](artifacts/coin-flipping-p-heads.png)
 ```
 P(p_heads > 52.5% | data)
 Non-informative prior    : 86.16%
