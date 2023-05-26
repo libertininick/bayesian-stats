@@ -18,24 +18,24 @@ import pandas as pd
 ```
 
 # Bayes's Theorem
-`P(A|B) = P(A) * P(B|A) / P(B)`
+$P(A|B)=\frac{P(A)*P(B|A)}{P(B)}$
 
 - If you have the complete populate dataset, you can just filter to the subset's you're interested in and calculate the proportions directly
-    - i.e. calculating `P(A|B)` is just as easy as calculating `P(B|A)`
+    - i.e. calculating $P(A|B)$ is just as easy as calculating $P(B|A)$
 - However, we often never have the complete data or we are asking questions about future unseen events and thus Bayes's theorem is very useful.
-- Bayes's theorem gives us a way to update a belief (hypothesis `H`) after observing some data `D_obs`.
-- It also gives us a way to update our beliefs about observing some other types of `D_new` given we've seen `D_obs`
+- Bayes's theorem gives us a way to update a belief (hypothesis `H`) after observing some data $D_{obs}$.
+- It also gives us a way to update our beliefs about observing some other types of $D_{new}$ given we've seen $D_{obs}$
 
-```
-P(H|D_obs) = P(H) * P(D_obs|H) / P(D_obs)
-P(D_new|D_obs) = P(D_obs|H) * P(H|D_obs) / P(H)
-```
-- `P(H)`: Prior - probability of a hypothesis before seeing the data
-- `P(H | D_obs)` : Posterior - probability of a hypothesis after seeing the data
-- `P(D_obs | H)` : Likelihood - probability of observing the data if a given hypothesis were true.
-- `P(D_obs)`: Unconditional (marginal) probability of observing the data - probability of observing the data irrespective of any hypothesis.
+$P(H|D_{obs}) = \frac{P(H) * P(D_{obs}|H)}{P(D_{obs})}$
+
+$P(D_{new}|D_{obs}) = \int_HP(D_{obs}|H) * P(H|D_{obs})\,dH$
+
+- $P(H)$: Prior - probability of a hypothesis before seeing the data
+- $P(H|D_{obs})$ : Posterior - probability of a hypothesis after seeing the data
+- $P(D_{obs}|H)$ : Likelihood - probability of observing the data if a given hypothesis were true.
+- $P(D_{obs})$: Unconditional (marginal) probability of observing the data - probability of observing the data irrespective of any hypothesis.
     - This is often the hard part to calculate.
-    - It involves summing up all the likelihoods across all possible hypotheses: `P(H1) * P(D|H1) + P(H2) * P(D|H2) + ...`
+    - It involves summing up all the likelihoods across all possible hypotheses: $\sum_{i=1}^nP(H_i) * P(D_{obs}|H_i)$
 
 
 # Solving the Monty Hall Problem w/ Bayes
@@ -48,7 +48,7 @@ P(D_new|D_obs) = P(D_obs|H) * P(H|D_obs) / P(H)
 
 Should you stick with your original choice or switch doors (to door 3)?
 
-- For this problem, the likelihood is the `P(door 2 opened | car behind door i)`
+- For this problem, the likelihood is the $P(door\;2\;opened|car\;behind\;door\;i)$
     - If the car is behind door 1, likelihood = 50% of seeing door 2 opened because the host will open door 2 or 3 at random.
     - If the car is behind door 2, likelihood = 0% of seeing that door opened; that would reveal the car.
     - If the car is behind door 3, likelihood = 100% of seeing door 2 opened; the host cant open door 3 or your chosen door 1.
