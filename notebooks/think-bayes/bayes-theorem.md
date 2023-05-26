@@ -106,7 +106,7 @@ print(pd.DataFrame(
 ))
 ```
 
-Which bag of candy?
+# Which bag of candy?
 - Assume there are two bags of colored candy:
     - Bag 1 has 70% green, 20% blue, 7% yellow, 3% red
     - Bag 2 has 50% green, 5% blue, 20% yellow, 25% red
