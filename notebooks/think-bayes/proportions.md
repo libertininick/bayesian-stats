@@ -36,33 +36,37 @@ p_heads = np.linspace(0,1,n_hypos)
 
 # Prior distribution for probability of heads
 # Non-informative prior
-noninform_priors = np.ones(n_hypos)
-noninform_priors /= noninform_priors.sum()
+noninform_prior = np.ones(n_hypos)
+noninform_prior /= noninform_prior.sum()
 
 # Using a fairly strong prior that the coin is unbiased
-strong_priors = stats.beta(a=100, b=100).pdf(p_heads)
-strong_priors /= strong_priors.sum()
+strong_prior = stats.beta(a=100, b=100).pdf(p_heads)
+strong_prior /= strong_prior.sum()
 
 # Binomial likelihoods
-likelihoods = stats.binom.pmf(k=140, n=250, p=p_heads)
+likelihood = stats.binom.pmf(k=140, n=250, p=p_heads)
 
 # Posteriors
-noninform_posteriors = noninform_priors * likelihoods
-noninform_posteriors /= noninform_posteriors.sum()
+noninform_posterior = noninform_prior * likelihood
+noninform_posterior /= noninform_posterior.sum()
 
-strong_posteriors = strong_priors * likelihoods
-strong_posteriors /= strong_posteriors.sum()
+strong_posterior = strong_prior * likelihood
+strong_posterior /= strong_posterior.sum()
 
 df = pd.DataFrame(
     dict(
-        noninform_prior=noninform_priors,
-        strong_prior=strong_priors,
-        likelihood=likelihoods,
-        noninform_posterior=noninform_posteriors,
-        strong_posterior=strong_posteriors,
+        noninform_prior=noninform_prior,
+        strong_prior=strong_prior,
+        likelihood=likelihood,
+        noninform_posterior=noninform_posterior,
+        strong_posterior=strong_posterior,
     ),
     index=pd.Series(p_heads, name="P(heads)")
 )
+
+# P(p_heads > 52.5% | data)
+print(f"Non-informative prior    : {df.noninform_posterior[df.index > 0.525].sum():.2%}")
+print(f"Strong prior coin is fair: {df.strong_posterior[df.index > 0.525].sum():.2%}")
 ```
 
 ```python
@@ -85,12 +89,6 @@ ax.set_ylabel("P(hypothesis)")
 ax.legend()
 ```
 
-```python
-# P(p_heads > 52.5% | data)
-print(f"Non-informative prior    : {df.noninform_posterior[df.index > 0.525].sum():.2%}")
-print(f"Strong prior coin is fair: {df.strong_posterior[df.index > 0.525].sum():.2%}")
-```
-
 # Dealing with social desirability bias
 Social desirability bias is the tendency for people to change their answer to a question so it's more congruent with social norms. For example, asking people directly if they water their lawns on days the city has requested people refrain from watering to conserve resources will likely illicit untruthful answers from some. People will adjust their answer to show themselves in a more favorable light. This makes it challenging to estimate the true proportion of people who are watering their lawn on days the city has asked them not to. However, if you ask people indirectly whether they are cheating on their lawn watering, you can more accurately estimate this proportion.
 
@@ -106,33 +104,30 @@ Now, suppose you survey 30 people and 21 responded `YES` and 9 `NO` to the quest
 ## Priors for the proportion of lawn watering cheaters
 
 ```python
-
 # Discrete set of hypotheses for the latent proportion of people who cheat on lawn watering
 n_hypos = 1001
-p_cheat = np.linspace(0,1,n_hypos)
+p_cheat = np.linspace(0, 1, n_hypos + 2)[1:-1]
 
 # Prior distributions
 # Non-informative prior
-noninform_prior = stats.beta(a=1, b=1).logpdf(p_cheat)
+noninform_prior = stats.beta(a=1, b=1).pdf(p_cheat)
 
-# Fairly strong prior that people are mostly honest (~94% certain than p_cheat <= 10%)
-only_a_few_cheat_prior = stats.beta(a=6, b=94).logpdf(p_cheat)
+# prior that people are mostly honest (10% cheaters)
+only_a_few_cheat_prior = stats.beta(a=1, b=9).pdf(p_cheat)
 
-# Fairly strong prior that a majority of people chat (~95% certain that p_cheat > 60%)
-majority_cheat_prior = stats.beta(a=68, b=32).logpdf(p_cheat)
+# prior that 70% people cheat
+majority_cheat_prior = stats.beta(a=7, b=3).pdf(p_cheat)
 
-priors = np.stack((noninform_prior, only_a_few_cheat_prior, majority_cheat_prior), axis=-1)
+prior = np.stack((noninform_prior, only_a_few_cheat_prior, majority_cheat_prior), axis=-1)
 ```
 
 ```python
 %matplotlib ipympl
 
 fig,ax = plt.subplots(figsize=(7,5))
-ax.plot(p_cheat, np.exp(noninform_prior), label="non-inform.")
-ax.plot(p_cheat, np.exp(only_a_few_cheat_prior), label="only a few cheat")
-ax.plot(p_cheat, np.exp(majority_cheat_prior), label="majority cheat")
-ax.axvline(x=0.1, color="black", alpha=0.5, linestyle="--")
-ax.axvline(x=0.6, color="black", alpha=0.5, linestyle="--")
+ax.plot(p_cheat, noninform_prior, label="non-inform.")
+ax.plot(p_cheat, only_a_few_cheat_prior, label="only a few cheat")
+ax.plot(p_cheat, majority_cheat_prior, label="majority cheat")
 ax.set_title(
     "Prior beliefs of % of lawn watering cheaters",
     loc='left', 
@@ -146,10 +141,12 @@ ax.legend()
 
 
 ### Modeling the randomizing coin
-- Given a fair coin, we'd expect 15 people to flip a heads and 15 to flip a tails, on average. 
+- Given a fair coin, we'd expect 15 people to flip a heads and 15 to flip a tails, on average.
+    - `stats.binom.mean(n=30, p=0.5)`
 - Therefore our initial guess (using just the data) is 15 people flipped a tails and 6 responded `YES`.
 - This gives us an estimate that ~40% of people cheat on their lawn watering. 
-- However, we really need the distribution of possible outcomes of 30 people flipping the coin,
+- However, we really need the distribution of possible outcomes of 30 people flipping the coin:
+    - Probability # heads <= 15 in 30 trials: `stats.binom.cdf(k=15, n=30, p=0.5)` = 57.2%
 - We need to take that uncertainty into account when estimating the proportion of people who flipped a tails and then answered `YES`. 
 - Specifically, we need the likelihood of flipping 0 through 21 heads over 30 trials given a fair coin.
 
@@ -158,15 +155,15 @@ p_heads = 0.5
 n_trials = 30
 
 n_heads = np.arange(0, 21 + 1)
-head_log_likelihoods = stats.binom.logpmf(k=n_heads, n=n_trials, p=p_heads)
+head_likelihood = stats.binom.pmf(k=n_heads, n=n_trials, p=p_heads)
 ```
 
 ```python
 fig,ax = plt.subplots(figsize=(7,5))
-ax.plot(n_heads, np.exp(head_log_likelihoods))
+ax.bar(x=n_heads, height=head_likelihood)
 ax.spines[['right', 'top']].set_visible(False)
 ax.set_title(
-    "Likelihood of flipping `X` heads in 30 trials, given a fair coin",
+    "Likelihood of flipping `k` heads in 30 trials, given a fair coin",
     loc='left', 
     fontdict={'fontsize': 12}
 )
@@ -181,7 +178,7 @@ Rather than modeling the likelihood of a single observed number of `YES` respons
 n_yes = 21 - n_heads
 n_tail_trails = n_trials - n_heads
 
-log_likelihoods = stats.binom.logpmf(
+likelihood = stats.binom.pmf(
     k=n_yes[..., None],
     n=n_tail_trails[..., None],
     p=p_cheat[None,...]
@@ -189,36 +186,153 @@ log_likelihoods = stats.binom.logpmf(
 ```
 
 ### Combined likelihood
-Now we can combine the likelihood of each of the 22 mixes of heads and tails we got from the randomizing coin with the likelihoods of each each hypothesis. The likelihood of each head/tail mix weights the likelihoods of the proportion hypothesis. Then we can marginalize out the actual head/tail outcomes by summing up the weighted hypotheses.
+Now we can combine the likelihood of each of the 22 mixes of heads and tails we got from the randomizing coin with the likelihoods of each each hypothesis. The likelihood of each head/tail mix weights the likelihoods of the proportion hypothesis. Then, we can marginalize out the actual head/tail outcomes by summing up the weighted hypotheses.
 
 ```python
-# Combine likehoods of head/tail mixes with hypotheses likelihoods
-combined_likelhoods = head_log_likelihoods[..., None] + log_likelihoods
+# Weighted average head/tail mixes
+n_heads_wts = head_likelihood /  head_likelihood.sum()
+combined_likelhood = n_heads_wts[..., None] * likelihood
+combined_likelhood = combined_likelhood.sum(axis=0)
+```
 
-# Sum over head/tail mixes
-combined_likelhoods = combined_likelhoods.sum(axis=0)
+## Posteriors
+
+Means:
+- Uniformed prior: 38.2%
+- Only a few_cheat prior: 16.9%
+- Majority cheat prior: 54.0%
+
+```python
+# Combine likelihood with prior
+posterior = prior * combined_likelhood[..., None]
+
+# Normalize
+posterior /= posterior.sum(axis=0, keepdims=True)
+
+# Mean posterior estimate of proportion of lawn watering cheaters
+posterior_mean = (p_cheat[:, None] * posterior).sum(0)
+posterior_mean
+```
+
+```python
+fig,ax = plt.subplots(figsize=(7,5))
+ax.plot(p_cheat, posterior[:,0], label="non-inform.")
+ax.plot(p_cheat, posterior[:,1], label="only a few cheat")
+ax.plot(p_cheat, posterior[:,2], label="majority cheat")
+ax.axvline(x=0.1, color="black", alpha=0.5, linestyle="--")
+ax.axvline(x=0.6, color="black", alpha=0.5, linestyle="--")
+ax.legend()
+```
+
+# Dealing with measurement errors
+Now imagine we have a drone outfitted with an infrared camera, and a classification algorithm that's been trained to predict whether a lawn has been watered based on an IR image of a lawn. We can use images from the drone taken on a non-watering day to estimate the proportion of people who are watering with out regard to the restriction.
+
+Using drone imagery, the model has reasonable accuracy but it's by no means perfect. It miss-classifies lawns as having been watered when they haven't about 25% of the time, and it predicts that a lawn wasn't watered when it actually has been about 5% of the time. Specifically, our posterior estimate on out-of-sample data for the model's prediction quality is:
+- $P(watered | predicted\,watered) \sim beta(95,5)$
+- $P(watered | predicted\,NOT\,watered) \sim beta(25,75)$
+
+Using this drone and classification model, we image 30 randomly chosen lawns on a non-watering day and the model predicts 16 of them were watered. What's our posterior distribution for the actual proportion of lawns that were given this sample and our estimate's for the model's prediction errors?
+
+
+## Priors for the proportion of lawn watering cheaters
+Using the same three priors...
+
+```python
+# Discrete set of hypotheses for the latent proportion of people who cheat on lawn watering
+n_hypos = 1001
+p_cheat = np.linspace(0, 1, n_hypos + 2)[1:-1]
+
+# Prior distributions
+# Non-informative prior
+noninform_prior = stats.beta(a=1, b=1).pdf(p_cheat)
+
+# Fairly strong prior that people are mostly honest (~94% certain than p_cheat <= 10%)
+only_a_few_cheat_prior = stats.beta(a=1, b=10).pdf(p_cheat)
+
+# Fairly strong prior that a majority of people chat (~95% certain that p_cheat > 60%)
+majority_cheat_prior = stats.beta(a=7, b=3).pdf(p_cheat)
+
+prior = np.stack((noninform_prior, only_a_few_cheat_prior, majority_cheat_prior), axis=-1)
+```
+
+## Monte Carlo sampling to model prediction errors
+We don't have a perfect measurement of the true number of lawns that were watered out of the 30 lawns we sampled (because our classification model makes mistakes). Therefore, we cannot use the watered/not watered predictions directly in our likelihood estimation. 
+
+Instead, we can simulate a bunch of alternate universes, and in each simulated sample pretend we have the true count of watered and not watered lawns. The simulated counts are drawn from the distributions of our model's classification accuracy. Then we can use those simulated samples in our likelihood calculation of our hypotheses for the proportion of people who cheat on their lawn watering. Finally, we can aggregate the posteriors for each hypothesis across simulations to arrive at our posterior estimates while still accounting for our model's prediction uncertainty.
+
+```python
+# Observed model predictions
+n_sampled = 30
+predicted_watered = 16
+predicted_not = n_sampled - predicted_watered
+
+# Posterior distributions of model's classification accuracy from out-of-sample data
+p_watered_predicted_watered = stats.beta(a=95, b=5)
+p_watered_predicted_not = stats.beta(a=25, b=75)
+
+# Number of Monte Carlo simulations
+n_mc_samples = 500
+
+# Simulated number of true (latent) watered lawns and not watered lawns given the model's predictions
+# watered, not watered | predicted watered
+watered_predicted_watered = stats.binom.rvs(
+    n=predicted_watered, p=p_watered_predicted_watered.rvs(n_mc_samples)
+)
+not_predicted_watered = predicted_watered - watered_predicted_watered
+
+# watered, not watered | predicted not watered
+watered_predicted_not = stats.binom.rvs(
+    n=predicted_not, p=p_watered_predicted_not.rvs(n_mc_samples)
+)
+not_predicted_not = predicted_not - watered_predicted_not
+
+# Combine
+watered = watered_predicted_watered + watered_predicted_not
+not_watered = not_predicted_watered + not_predicted_not
+watering_outcome = np.stack((watered, not_watered), axis=-1)
+assert np.all(watering_outcome.sum(-1) == n_sampled)
+watering_outcome.mean(0)
+```
+
+```python
+fig, ax = plt.subplots(figsize=(10,5))
+bins = np.arange(watered.max())
+ax.hist(watered, bins=bins, alpha=0.5, color="blue", label="watered")
+ax.hist(not_watered, bins=bins, alpha=0.5, color="black", label="not watered")
+ax.set_title(
+    "Distribution of simulated watered vs. not waterd lawns", 
+    loc='left', 
+    fontdict={'fontsize': 12}
+)
+_ = ax.legend()
+```
+
+## Likelihoods
+
+```python
+likelihood = stats.binom.pmf(
+    k=watered[None, ...],
+    n=n_sampled,
+    p=p_cheat[:, None],
+)
+likelihood.shape
 ```
 
 ## Posteriors
 
 ```python
 # Combine likelihood with prior
-posteriors = priors + combined_likelhoods[..., None]
+posterior = likelihood[:, None, :] * prior[..., None]
 
 # Normalize
-posteriors -= posteriors.max(axis=0, keepdims=True)
-posteriors = np.exp(posteriors)
-posteriors /= posteriors.sum(axis=0, keepdims=True)
-```
+posterior /= posterior.sum(axis=0, keepdims=True)
 
-```python
-fig,ax = plt.subplots(figsize=(7,5))
-ax.plot(p_cheat, posteriors[:,0], label="non-inform.")
-ax.plot(p_cheat, posteriors[:,1], label="only a few cheat")
-ax.plot(p_cheat, posteriors[:,2], label="majority cheat")
-ax.axvline(x=0.1, color="black", alpha=0.5, linestyle="--")
-ax.axvline(x=0.6, color="black", alpha=0.5, linestyle="--")
-ax.legend()
+# Average across sims
+posterior = posterior.mean(-1)
+
+# Mean posterior estimate of proportion of lawn watering cheaters
+posterior_mean = (p_cheat[:, None] * posterior).sum(0)
+posterior_mean
 ```
 
 ```python
