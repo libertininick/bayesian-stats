@@ -219,8 +219,6 @@ fig,ax = plt.subplots(figsize=(7,5))
 ax.plot(p_cheat, posterior[:,0], label="non-inform.")
 ax.plot(p_cheat, posterior[:,1], label="only a few cheat")
 ax.plot(p_cheat, posterior[:,2], label="majority cheat")
-ax.axvline(x=0.1, color="black", alpha=0.5, linestyle="--")
-ax.axvline(x=0.6, color="black", alpha=0.5, linestyle="--")
 ax.legend()
 ```
 
@@ -231,39 +229,28 @@ Using drone imagery, the model has reasonable accuracy but it's by no means perf
 - $P(watered | predicted\,watered) \sim beta(95,5)$
 - $P(watered | predicted\,NOT\,watered) \sim beta(25,75)$
 
-Using this drone and classification model, we image 30 randomly chosen lawns on a non-watering day and the model predicts 16 of them were watered. What's our posterior distribution for the actual proportion of lawns that were given this sample and our estimate's for the model's prediction errors?
+Using this drone and classification model, we image 80 randomly chosen lawns on a non-watering day and the model predicts 25 of them were watered. What's our posterior distribution for the actual proportion of lawns that were given this sample and our estimate's for the model's prediction errors?
 
 
 ## Priors for the proportion of lawn watering cheaters
-Using the same three priors...
+Use the posteriors from our survey for our priors
 
 ```python
 # Discrete set of hypotheses for the latent proportion of people who cheat on lawn watering
-n_hypos = 1001
+n_hypos = len(prior)
 p_cheat = np.linspace(0, 1, n_hypos + 2)[1:-1]
-
-# Prior distributions
-# Non-informative prior
-noninform_prior = stats.beta(a=1, b=1).pdf(p_cheat)
-
-# Fairly strong prior that people are mostly honest (~94% certain than p_cheat <= 10%)
-only_a_few_cheat_prior = stats.beta(a=1, b=10).pdf(p_cheat)
-
-# Fairly strong prior that a majority of people chat (~95% certain that p_cheat > 60%)
-majority_cheat_prior = stats.beta(a=7, b=3).pdf(p_cheat)
-
-prior = np.stack((noninform_prior, only_a_few_cheat_prior, majority_cheat_prior), axis=-1)
+prior = posterior.copy()
 ```
 
 ## Monte Carlo sampling to model prediction errors
-We don't have a perfect measurement of the true number of lawns that were watered out of the 30 lawns we sampled (because our classification model makes mistakes). Therefore, we cannot use the watered/not watered predictions directly in our likelihood estimation. 
+We don't have a perfect measurement of the true number of lawns that were watered out of the 80 lawns we sampled (because our classification model makes mistakes). Therefore, we cannot use the watered/not watered predictions directly in our likelihood estimation. 
 
 Instead, we can simulate a bunch of alternate universes, and in each simulated sample pretend we have the true count of watered and not watered lawns. The simulated counts are drawn from the distributions of our model's classification accuracy. Then we can use those simulated samples in our likelihood calculation of our hypotheses for the proportion of people who cheat on their lawn watering. Finally, we can aggregate the posteriors for each hypothesis across simulations to arrive at our posterior estimates while still accounting for our model's prediction uncertainty.
 
 ```python
 # Observed model predictions
-n_sampled = 30
-predicted_watered = 16
+n_sampled = 80
+predicted_watered = 25
 predicted_not = n_sampled - predicted_watered
 
 # Posterior distributions of model's classification accuracy from out-of-sample data
@@ -271,7 +258,7 @@ p_watered_predicted_watered = stats.beta(a=95, b=5)
 p_watered_predicted_not = stats.beta(a=25, b=75)
 
 # Number of Monte Carlo simulations
-n_mc_samples = 500
+n_mc_samples = 10000
 
 # Simulated number of true (latent) watered lawns and not watered lawns given the model's predictions
 # watered, not watered | predicted watered
@@ -333,6 +320,14 @@ posterior = posterior.mean(-1)
 # Mean posterior estimate of proportion of lawn watering cheaters
 posterior_mean = (p_cheat[:, None] * posterior).sum(0)
 posterior_mean
+```
+
+```python
+fig,ax = plt.subplots(figsize=(7,5))
+ax.plot(p_cheat, posterior[:,0], label="non-inform.")
+ax.plot(p_cheat, posterior[:,1], label="only a few cheat")
+ax.plot(p_cheat, posterior[:,2], label="majority cheat")
+ax.legend()
 ```
 
 ```python
