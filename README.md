@@ -5,31 +5,30 @@ Sandbox repository for my journey learning Probabilistic Programming & Bayesian 
 - [NumPyro](https://num.pyro.ai/en/stable/): NumPyro is a lightweight probabilistic programming library that provides a NumPy backend for Pyro.
 - [ArviZ](https://python.arviz.org/en/stable/): ArviZ is a Python package for exploratory analysis of Bayesian models.
 
-## Create conda environment
+## Create conda environment & install
 ```bash
-# Update base environment
+# Clone repository
+git clone git@github.com:libertininick/bayesian-stats.git
+
+# Navigate to local repo directory
+cd bayesian-stats
+
+# Update base conda environment
 conda update -y -n base -c defaults conda
 
-# Create bayesian_stats env
-conda create -y -n bayesian_stats \
-    -c conda-forge \
-    arviz \
-    black \
-    ipykernel \
-    ipympl \
-    matplotlib \
-    numpy \
-    numpyro \
-    pandas \
-    python=3.11 \
-    python-dotenv \
-    python-graphviz \
-    scipy
+# Install conda-lock
+# conda-lock is used to generate fully reproducible conda environments via a lock file
+conda install --channel=conda-forge --name=base conda-lock
 
-# Activate bayesian_stats env
+# Create conda environment from `conda-lock.yml`
+conda-lock install --name bayesian_stats conda-lock.yml
+
+# (optionally) for use with Jupyter install `ipykernel` and `ipympl`
+conda install -c conda-forge -n bayesian_stats ipykernel ipympl
+
+# Activate conda environment
 conda activate bayesian_stats
 
-# Install python package
-cd ./bayesian-stats
-python -m pip install -e .
+# Install `bayesian-stats` w/ poetry
+poetry install --with dev
 ```
