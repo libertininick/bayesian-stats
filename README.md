@@ -23,12 +23,9 @@ conda install --channel=conda-forge --name=base conda-lock
 # Create conda environment from `conda-lock.yml`
 conda-lock install --name bayesian_stats conda-lock.yml
 
-# (optionally) for use with Jupyter install `ipykernel` and `ipympl`
-conda install -c conda-forge -n bayesian_stats ipykernel ipympl
-
 # Activate conda environment
 conda activate bayesian_stats
 
 # Install `bayesian-stats` w/ poetry
-poetry install --with dev
+poetry install --with dev,jupyter
 ```
