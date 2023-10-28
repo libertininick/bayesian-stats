@@ -1,3 +1,5 @@
+"""Utility functions."""
+
 from typing import Any, Iterable
 
 import numpy as np
@@ -21,7 +23,7 @@ __all__ = [
 def get_auto_corr(
     x: NDArray[Any], lags: int | Iterable[int] | NDArray[np.int64] | None = None
 ) -> NDArray[np.float64]:
-    """Auto-correlation of a vector for specific lags
+    """Get auto-correlation of a vector for specific lags.
 
     Parameters
     ----------
@@ -65,14 +67,15 @@ def get_auto_corr(
     if lags.max() >= n - 1:
         raise ValueError(f"Max lag must < {n - 1}")
 
-    return np.array([1.0 if l == 0 else np.corrcoef(x[l:], x[:-l])[0, 1] for l in lags])
+    return np.array(
+        [1.0 if lag == 0 else np.corrcoef(x[lag:], x[:-lag])[0, 1] for lag in lags]
+    )
 
 
 def get_effective_sample_size(
     chain: NDArray[Any], lags: int, burn_in_frac: float = 0.5
 ) -> float:
-    """Estimates the effective sample size based on the auto-correlation of
-    a posterior MCMC sample chain.
+    """Estimate the effective sample size based on auto-correlation of MCMC samples.
 
     Parameters
     ----------
@@ -88,7 +91,6 @@ def get_effective_sample_size(
     -------
     effective_sample_size: int
     """
-
     # Discard the first x% of samples (burn-in period)
     n = len(chain)
     st = int(n * burn_in_frac)
@@ -111,7 +113,7 @@ def get_effective_sample_size(
 def get_gelman_rubin_diagnostic(
     chains: NDArray[Any], burn_in_frac: float = 0.5
 ) -> float:
-    """Gelman-Rubin Convergence Diagnostic
+    """Calculate Gelman-Rubin Convergence Diagnostic.
 
     Parameters
     ----------
@@ -137,7 +139,8 @@ def get_gelman_rubin_diagnostic(
     variation within the chains: `R ~ Between chain variance / within chain variance`
     - Brooks and Gelman (1998) suggest that diagnostic values greater than 1.2
     for any of the model parameters indicate nonconvergence.
-    In practice, a more stringent rule of `R < 1.1` is often used to declare convergence.
+    - In practice, a more stringent rule of `R < 1.1` is often used to declare \
+        convergence.
     """
     # M Chains of length N
     chains = np.array(chains)
@@ -156,7 +159,8 @@ def get_gelman_rubin_diagnostic(
     global_mean = chains.mean()
     b = np.sum((chain_means - global_mean) ** 2) * n / (m - 1)
 
-    # Calculate the estimated variance as the weighted sum of between and within chain variance.
+    # Calculate the estimated variance as the weighted sum of between and
+    # within chain variance.
     est_var = (1 - 1 / n) * w + 1 / n * b
 
     # Calculate the potential scale reduction factor.
@@ -170,7 +174,7 @@ def get_gelman_rubin_diagnostic(
 def get_highest_density_interval(
     x: NDArray[Any], confidence_level: float = 0.95, axis: int | None = None
 ) -> NDArray[Any]:
-    """Highest Posterior Density credible interval (HDI)
+    """Get the Highest Posterior Density credible interval (HDI).
 
     Parameters
     ----------
@@ -252,8 +256,7 @@ def get_highest_density_interval(
 def get_invgamma_params(
     variance_prior: float, effective_sample_size: int
 ) -> dict[str, float]:
-    """Calculates the parameters for the inverse gamma distribution to use as the
-    prior distribution for an unknown variance of a normal distribution.
+    """Get the invgamma parameters to use as the prior distribution for ~N variance.
 
     Parameters
     ----------
@@ -275,10 +278,7 @@ def get_invgamma_params(
 
 
 def get_probability_non_zero(x: NDArray[np.number]) -> float:
-    """Probability a parameter's value is non-zero (either > 0 or < 0) based on
-    its sampling distribution.
-
-    Useful for assessing the probability that a regression coefficient is non-zero.
+    """Get probability a parameter's value is non-zero (either > 0 or < 0).
 
     Parameters
     ----------
@@ -351,7 +351,7 @@ def get_rolling_windows(
 def one_hot_encode(
     x: pd.Series | NDArray[Any], var_name: str | None = None
 ) -> pd.DataFrame:
-    """One-hot-encode a categorical variable
+    """One-hot-encode a categorical variable.
 
     Parameters
     ----------
