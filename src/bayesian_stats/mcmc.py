@@ -5,7 +5,7 @@ iterations, so at the end of the iterations you have `N` samples approximating
 the posterior distribution.
 """
 import math
-from typing import Iterable, NamedTuple
+from typing import Callable, Iterable, NamedTuple
 
 import torch
 from scipy.stats import qmc
@@ -54,6 +54,10 @@ def initialize_samples(
         Random state seed.
         (default = None)
 
+    Returns
+    -------
+    samples: Tensor, shape=(num_samples, num_parameters)
+
     Raises
     ------
     ValueError
@@ -75,3 +79,39 @@ def initialize_samples(
     samples = qmc.scale(samples, l_bounds, u_bounds)
 
     return torch.from_numpy(samples).to(device=device, dtype=dtype)
+
+
+def get_sample_log_prob(
+    parameters: list[str],
+    samples: Tensor,
+    likelihood: Callable[[dict[str, Tensor]], Tensor],
+    prior: Callable[[dict[str, Tensor]], Tensor],
+) -> Tensor:
+    """Get un-normalized log probability of samples from likelihood and prior functions.
+
+    Parameters
+    ----------
+    parameters: list[str], len=num_parameters
+        Model parameter names.
+    samples: Tensor, shape=(num_samples, num_parameters)
+        Samples for each parameter.
+    likelihood: Callable[[dict[str, Tensor]], Tensor]
+        Function that takes parameter samples and returns a log likelihood for
+        each sample.
+    prior: Callable[[dict[str, Tensor]], Tensor]
+        Function that takes parameter samples and returns prior log probability
+        for each sample.
+
+    Returns
+    -------
+    log_probs: : Tensor, shape=(num_samples,)
+        Un-normalized log probability of samples.
+    """
+    # Convert sample tensor to sample dict
+    sample_dict = dict(zip(parameters, samples.T))
+
+    # Get prior probability and likelihood of each sample's parameters
+    prior_log_probs = prior(**sample_dict)
+    log_likelihoods = likelihood(**sample_dict)
+
+    return prior_log_probs + log_likelihoods
