@@ -130,3 +130,6 @@ dmypy.json
 
 # Certain data files
 /data/think-bayes/gss_bayes.csv
+
+# vscode
+.vscode/
