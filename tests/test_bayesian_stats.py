@@ -1,3 +1,5 @@
+"""Version tests."""
+
 from bayesian_stats import __version__
 
 
