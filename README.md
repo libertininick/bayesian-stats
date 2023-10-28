@@ -1,9 +1,8 @@
 # bayesian-stats
-Sandbox repository for my journey learning Probabilistic Programming & Bayesian statistics
+This is a sandbox repository for documenting my journey learning probabilistic programming & Bayesian statistics.
 
-## PPL libraries
-- [NumPyro](https://num.pyro.ai/en/stable/): NumPyro is a lightweight probabilistic programming library that provides a NumPy backend for Pyro.
-- [ArviZ](https://python.arviz.org/en/stable/): ArviZ is a Python package for exploratory analysis of Bayesian models.
+I've chosen to build this library on top of [PyTorch](https://pytorch.org/) and [Pyro](https://pyro.ai/) given my experience
+with torch from my deep learning adventures.
 
 ## Create conda environment & install
 ```bash
