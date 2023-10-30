@@ -5,13 +5,16 @@ import pytest
 import torch
 from torch import Tensor
 
-from bayesian_stats.mcmc import Bounds, get_proposal_distribution, initialize_samples
+from bayesian_stats.mcmc import (
+    Bounds,
+    get_proposal_distribution,
+    initialize_samples,
+)
 
 
 # Test constants
 NUM_SAMPLES = 1_024
 NUM_PARAMETERS = 3
-PROPOSAL_WIDTH = 0.1
 
 
 # Test fixtures
@@ -30,12 +33,9 @@ def samples(parameter_bounds: dict[str, Bounds]) -> Tensor:
 
 
 @pytest.fixture(scope="module")
-def proposal_dist(samples: Tensor, parameter_bounds: dict[str, Bounds]) -> dist.Uniform:
-    """Get a uniform proposal distribution text fixture."""
-    lower_bounds, upper_bounds = torch.tensor(list(parameter_bounds.values())).T
-    return get_proposal_distribution(
-        samples, lower_bounds, upper_bounds, proposal_width=PROPOSAL_WIDTH
-    )
+def proposal_dist(samples: Tensor) -> dist.Normal:
+    """Get a proposal distribution text fixture."""
+    return get_proposal_distribution(samples)
 
 
 # Tests
@@ -62,36 +62,12 @@ def test_initialize_samples_seeded() -> None:
     assert torch.allclose(expected, samples)
 
 
-def test_proposal_distribution_shape(proposal_dist: dist.Uniform) -> None:
+def test_proposal_distribution_shape(proposal_dist: dist.Normal) -> None:
     """Test that proposal distribution has correct shape."""
     assert proposal_dist.shape() == (NUM_SAMPLES, NUM_PARAMETERS)
 
 
-def test_proposal_distribution_width(
-    proposal_dist: dist.Uniform, parameter_bounds: dict[str, Bounds]
-) -> None:
-    """Test that each parameter sample's proposal distribution has correct width."""
-    for i, bounds in enumerate(parameter_bounds.values()):
-        # Samples were randomly initialized so expected sampled dist is ~ U(lb, ub)
-        expected_dist = dist.Uniform(*bounds)
-
-        # Look up cumulative probability of lower and upper bounds of proposal dist
-        lower_prob = expected_dist.cdf(proposal_dist.low[:, i])
-        upper_prob = expected_dist.cdf(proposal_dist.high[:, i])
-
-        # Check width of proposal dist is roughly = PROPOSAL_WIDTH
-        diff = torch.abs((upper_prob - lower_prob) - PROPOSAL_WIDTH)
-        assert torch.all(diff <= 0.01)
-
-
-def test_proposal_distribution_sample(
-    proposal_dist: dist.Uniform, parameter_bounds: dict[str, Bounds]
-) -> None:
-    """Test a sample from the proposal distribution is correct shape and all proposed \
-        values are within bounds."""
+def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
+    """Test a sample from the proposal distribution is correct shape."""
     proposals = proposal_dist.sample()
     assert proposals.shape == (NUM_SAMPLES, NUM_PARAMETERS)
-
-    lower_bounds, upper_bounds = torch.tensor(list(parameter_bounds.values())).T
-    assert torch.all(proposals >= lower_bounds[None])
-    assert torch.all(proposals <= upper_bounds[None])
