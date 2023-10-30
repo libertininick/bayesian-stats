@@ -1,14 +1,16 @@
-"""Utility functions."""
+"""Utility classes and functions."""
 
 from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
-
+import torch
 from numpy.typing import NDArray
+from torch import Tensor
 
 
 __all__ = [
+    "CumulativeDistribution",
     "get_auto_corr",
     "get_effective_sample_size",
     "get_gelman_rubin_diagnostic",
@@ -18,6 +20,121 @@ __all__ = [
     "get_rolling_windows",
     "one_hot_encode",
 ]
+
+
+class CumulativeDistribution:
+    """Estimate of the cumulative probability distribution for a set of random \
+        variables.
+
+    Examples
+    --------
+    >>> import pyro.distributions as dist
+    >>> import torch
+    >>> from bayesian_stats.utils import CumulativeDistribution
+
+    Get samples from 2 normally distributed random variables
+    >>> torch.manual_seed(123)
+    >>> samples = dist.Normal(
+        loc=torch.tensor([-1., 1.]),
+        scale=torch.tensor([2., 0.5])
+    ).sample((1_000,))
+
+    >>> samples.shape
+    torch.Size([1000, 2])
+
+    Estimate cumulative probability distribution for each variable
+    >>> cdist = CumulativeDistribution(samples)
+
+    Get cumulative probability @ 0. for each variable
+    >>> cdist.get_prob(torch.zeros((1,2)))
+    tensor([[0.6760, 0.0220]])
+
+    Get 95% CI for each variable
+    >>> cdist.get_value(torch.tensor([[0.05, 0.05], [0.95, 0.95]]))
+    tensor([[-4.1061,  0.1846],
+            [ 2.2969,  1.8337]])
+    """
+
+    def __init__(self, samples: Tensor) -> None:
+        """Initialize from random variable samples.
+
+        Parameters
+        ----------
+        samples: Tensor, shape=(num_samples, num_vars)
+            Samples for each random variable.
+        """
+        if samples.ndim != 2:
+            raise ValueError(
+                "Expecting a 2D tensor of samples (samples x variables);"
+                f"got {samples.ndim}D"
+            )
+        self.num_samples, self.num_vars = samples.shape
+
+        # Sort each column of samples smallest to largest
+        sorted_samples = torch.sort(samples, dim=0)
+
+        # Cumulative probability values
+        self.cumulative_prob = (
+            torch.arange(self.num_samples).to(samples) / self.num_samples
+        )
+        self.cumulative_values: Tensor = sorted_samples.values
+
+        # Store a contiguous, transposed copy of cumulative values for prob lookup
+        self._contig_cvalues = self.cumulative_values.T.contiguous()
+
+    def get_prob(self, values: Tensor) -> Tensor:
+        """Look up the cumulative probability given random variable values.
+
+        Parameters
+        ----------
+        values: Tensor, shape=(N, num_vars)
+            A set of values for each random variable to look up the cumulative \
+                probability for.
+
+        Returns
+        -------
+        probs: Tensor, shape=(N, num_vars)
+            Cumulative probability @ values.
+        """
+        if values.ndim != 2 or values.shape[-1] != self.num_vars:
+            raise ValueError(
+                f"values must have shape (N, {self.num_vars}); got {values.shape}"
+            )
+        return torch.searchsorted(self._contig_cvalues, values.T).T / self.num_samples
+
+    def get_value(self, probs: Tensor) -> Tensor:
+        """Look up the distribution values for a given set of cumulative probabilities.
+
+        Parameters
+        ----------
+        values: Tensor, shape=(N, num_vars)
+            A set of values for each parameter to look up the cumulative \
+                probability for.
+
+        Returns
+        -------
+        probs: Tensor, shape=(N, num_vars)
+            Cumulative probability @ values.
+        """
+        if probs.ndim != 2 or probs.shape[-1] != self.num_vars:
+            raise ValueError(
+                f"probs must have shape (N, {self.num_vars}); got {probs.shape}"
+            )
+
+        # Get index of probabilities to look up distribution values with
+        idx = probs * self.num_samples
+        idx_lb = torch.floor(idx).to(torch.long)
+        idx_ub = torch.ceil(idx).to(torch.long)
+
+        # Determine weight for upper bound index based on remainder
+        ub_wt = idx % 1
+
+        # Look up distribution values by index
+        values_lb = torch.gather(self.cumulative_values, dim=0, index=idx_lb)
+        values_ub = torch.gather(self.cumulative_values, dim=0, index=idx_ub)
+
+        # Return weighted average of upper and lower values for indexes
+        return values_lb * (1 - ub_wt) + values_ub * ub_wt
 
 
 def get_auto_corr(
