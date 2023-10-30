@@ -4,7 +4,11 @@ This is a sandbox repository for documenting my journey learning probabilistic p
 I've chosen to build this library on top of [PyTorch](https://pytorch.org/) and [Pyro](https://pyro.ai/) given my experience
 with torch from my deep learning adventures.
 
-## Create conda environment & install
+
+## Installation
+
+To create a conda environment and install `bayesian-stats` with [poetry](https://python-poetry.org/docs/):
+
 ```bash
 # Clone repository
 git clone git@github.com:libertininick/bayesian-stats.git
@@ -28,3 +32,17 @@ conda activate bayesian_stats
 # Install `bayesian-stats` w/ poetry
 poetry install --with dev,jupyter
 ```
+
+
+## Running Tests
+
+To run tests and test coverage, run the following commands:
+
+```bash
+coverage erase \
+    && coverage run -m pytest \
+    && coverage report
+```
+
+## Authors
+- [@libertininick](https://github.com/libertininick)
