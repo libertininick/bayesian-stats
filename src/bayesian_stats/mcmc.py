@@ -5,14 +5,13 @@ iterations, so at the end of the iterations you have `N` samples approximating
 the posterior distribution.
 """
 import math
+from functools import partial
 from typing import Callable, Iterable, NamedTuple, ParamSpec
 
 import pyro.distributions as dist
 import torch
-from scipy.stats import qmc
+from scipy.stats import qmc, wasserstein_distance
 from torch import Tensor
-
-from bayesian_stats.utils import CumulativeDistribution
 
 
 P = ParamSpec("P")
@@ -33,61 +32,63 @@ class Bounds(NamedTuple):
     upper: float
 
 
-def get_proposal_distribution(
-    samples: Tensor,
-    lower_bounds: Tensor,
-    upper_bounds: Tensor,
-    proposal_width: float,
-) -> dist.Uniform:
-    """Get a uniform proposal distribution for each parameter sample.
+def get_max_wasserstein_distance(
+    samples_a: Tensor,
+    samples_b: Tensor,
+    bounds: Iterable[Bounds | tuple[float, float]],
+) -> float:
+    """Get the max Wasserstein distance of between two sets of parameter samples.
+
+    The Wasserstein distance is the minimum amount of distribution weight that must
+    be moved, multiplied by the distance it has to be moved to transform `dist_a`
+    into `dist_b`.
+
+    Parameters
+    ----------
+    samples_a: Tensor, shape(num_samples, num_parameters)
+        Sample distributions A.
+    samples_b: Tensor, shape(num_samples, num_parameters)
+        Sample distributions B.
+    bounds: Iterable[Bounds]
+        Parameter bounds.
+
+    Returns
+    -------
+    max_dist: float
+        Max Wasserstein distance across parameters for samples A and B.
+    """
+    max_dist = 0.0
+    for i, bounds in enumerate(bounds):
+        lb, ub = bounds
+        dist_i = wasserstein_distance(
+            (samples_a[:, i].cpu().numpy() - lb) / (ub - lb),
+            (samples_b[:, i].cpu().numpy() - lb) / (ub - lb),
+        )
+        max_dist = max(max_dist, dist_i.item())
+    return max_dist
+
+
+def get_proposal_distribution(samples: Tensor) -> dist.Normal:
+    """Get a normal proposal distribution centered at each parameter sample with \
+        scale equal to the standard deviation of each parameter's samples.
+
+    As the sampling distribution of each parameter evolves, the standard deviation
+    may shrink, thus annealing the sample movement from iteration to iteration.
 
     Parameters
     ----------
     samples: Tensor, shape=(num_samples, num_parameters)
-        Samples for each parameter.
-    lower_bounds: Tensor, shape=(num_parameters,)
-        Lower bound for each parameter.
-    upper_bounds: Tensor, shape=(num_parameters,)
-        Upper bound for each parameter.
-    proposal_width: float
-        Width of proposal distribution expressed as a percentage of sample \
-            distribution for each parameter.
 
     Returns
     -------
-    proposal_dist: pyro.distributions.Uniform, shape=(num_samples, num_parameters)
-        Uniform proposal distribution for each parameter sample.
+    proposal_dist: pyro.distributions.Normal, shape=(num_samples, num_parameters)
+        Normal proposal distribution for each parameter sample.
     """
-    # Estimate cdf for each parameter from samples
-    cdist = CumulativeDistribution(
-        samples=torch.cat((lower_bounds[None], samples, upper_bounds[None]), dim=0)
-    )
+    # Calculate standard deviation of each parameter distribution
+    proposal_scales = samples.std(dim=0, keepdim=True)
 
-    # Get cumulative dist probability for each sample
-    sample_cprobs = cdist.get_prob(samples)
-
-    # Calculate proposal distribution probability bounds
-    proposal_lb_prob = sample_cprobs - proposal_width / 2
-    proposal_ub_prob = sample_cprobs + proposal_width / 2
-
-    # Shift out of bounds lower bounds
-    oob_mask = proposal_lb_prob < 0
-    proposal_ub_prob += -proposal_lb_prob * oob_mask
-
-    # Shift out of bounds upper bounds
-    oob_mask = proposal_ub_prob > 1
-    proposal_lb_prob -= (proposal_ub_prob - 1) * oob_mask
-
-    # Clip of any remaining oobs
-    proposal_lb_prob = proposal_lb_prob.clip(min=0.0, max=1.0)
-    proposal_ub_prob = proposal_ub_prob.clip(min=0.0, max=1.0)
-
-    # Look up values from probabilities
-    proposal_lb = cdist.get_value(proposal_lb_prob)
-    proposal_ub = cdist.get_value(proposal_ub_prob)
-
-    # Build uniform proposal distribution from bounds
-    proposal_dist = dist.Uniform(low=proposal_lb, high=proposal_ub)
+    # Build normal proposal distribution centered at each sample
+    proposal_dist = dist.Normal(loc=samples, scale=proposal_scales)
 
     return proposal_dist
 
@@ -184,3 +185,115 @@ def initialize_samples(
     samples = qmc.scale(samples, l_bounds, u_bounds)
 
     return torch.from_numpy(samples).to(device=device, dtype=dtype)
+
+
+def run_mcmc(
+    parameter_bounds: dict[str, Bounds],
+    prior: Callable[P, Tensor],
+    likelihood: Callable[P, Tensor] | None,
+    num_samples: int,
+    *,
+    max_iter: int = 1_000,
+    tol: float | None = None,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = torch.float32,
+    seed: int | None = None,
+) -> dict[str, Tensor]:
+    """Run parallel MCMC sampling.
+
+    Parameters
+    ----------
+    parameter_bounds: dict[str, Bounds]
+        Bounds for each parameter in `prior` and `likelihood` spec.
+    prior: Callable[..., Tensor]
+        Function that takes parameter samples as Tensors and returns a single Tensor \
+            for the joint prior log probability.
+    likelihood: Callable[..., Tensor] | None
+        Function w/ same parameter signature as `prior`, that takes parameter samples \
+            as Tensors and returns a single Tensor for the joint log likelihood. \
+            If `None`, then only prior joint probability will be returned.
+    num_samples: int
+        Number of MCMC samples.
+    max_iter: int, optional
+        Maximum number of iterations to evolve samples for.
+        (default = 1_000)
+    tol: float | None, optional
+        Wasserstein distance for early stopping. If the maximum change in sampling \
+            distributions from one iteration to the next is less than this value \
+            iterations will be stopped and the sampling distribution returned. \
+            If `None`, then will run to `max_iter`.
+            (default = None)
+    device: torch.device | None, optional
+        Compute device for samples.
+        (default = None)
+    dtype: torch.dtype | None, optional
+        Datatype for samples.
+        (default = torch.float32)
+    seed: int | None, optional
+        Random state seed.
+        (default = None)
+
+
+    Returns
+    -------
+    samples: dict[str, Tensor]
+        Samples for each parameter.
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    # Initialize samples
+    lower_bounds, upper_bounds = torch.tensor(
+        list(parameter_bounds.values()),
+        device=device,
+        dtype=dtype,
+    ).T
+    samples = initialize_samples(
+        bounds=parameter_bounds.values(),
+        num_samples=num_samples,
+        device=device,
+        dtype=dtype,
+        seed=seed,
+    )
+
+    # Evaluate samples
+    _eval_fxn = partial(
+        get_sample_log_prob,
+        parameters=list(parameter_bounds.keys()),
+        prior=prior,
+        likelihood=likelihood,
+    )
+    sample_scores: Tensor = _eval_fxn(samples=samples)
+
+    # Update iterations
+    for i in range(max_iter):
+        # Get proposed samples
+        proposed_samples = (
+            get_proposal_distribution(samples)
+            .sample()
+            .clip(min=lower_bounds, max=upper_bounds)
+        )
+
+        # Evaluate proposed samples
+        proposed_sample_scores: Tensor = _eval_fxn(samples=proposed_samples)
+
+        # Decide whether to move to proposed for each sample
+        move_prob = torch.sigmoid(proposed_sample_scores - sample_scores)
+        move_mask = move_prob >= torch.rand_like(move_prob)
+        new_samples = torch.where(move_mask[:, None], proposed_samples, samples)
+
+        # Check change in distribution information from previous samples to
+        # updated samples to see if iterations should be stopped.
+        if tol is not None:
+            max_dist = get_max_wasserstein_distance(
+                samples, new_samples, parameter_bounds.values()
+            )
+            if max_dist <= tol:
+                # Stop iterations
+                break
+
+        # Update samples and scores
+        samples = new_samples
+        sample_scores = torch.where(move_mask, proposed_sample_scores, sample_scores)
+
+    return dict(zip(parameter_bounds, samples.T))
