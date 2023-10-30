@@ -100,7 +100,10 @@ class CumulativeDistribution:
             raise ValueError(
                 f"values must have shape (N, {self.num_vars}); got {values.shape}"
             )
-        return torch.searchsorted(self._contig_cvalues, values.T).T / self.num_samples
+        return (
+            torch.searchsorted(self._contig_cvalues, values.T.contiguous()).T
+            / self.num_samples
+        )
 
     def get_value(self, probs: Tensor) -> Tensor:
         """Look up the distribution values for a given set of cumulative probabilities.
@@ -122,7 +125,7 @@ class CumulativeDistribution:
             )
 
         # Get index of probabilities to look up distribution values with
-        idx = probs * self.num_samples
+        idx = probs * (self.num_samples - 1)
         idx_lb = torch.floor(idx).to(torch.long)
         idx_ub = torch.ceil(idx).to(torch.long)
 
