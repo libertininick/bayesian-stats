@@ -33,10 +33,20 @@ conda activate bayesian_stats
 poetry install --with dev,jupyter
 ```
 
+## Running Linting and Type Checking
+
+To format code to adhere to our style and run type checking run the following:
+
+```bash
+black src/ tests/ \
+    && isort src/ tests/ \
+    && flake8 src/ tests/ --verbose \
+    && mypy src/
+```
 
 ## Running Tests
 
-To run tests and test coverage, run the following commands:
+To run tests and test coverage, run the following:
 
 ```bash
 coverage erase \
