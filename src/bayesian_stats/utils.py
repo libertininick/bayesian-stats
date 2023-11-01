@@ -16,7 +16,9 @@ __all__ = [
     "get_highest_density_interval",
     "get_invgamma_params",
     "get_rolling_windows",
+    "get_spearman_corrcoef",
     "one_hot_encode",
+    "rank",
 ]
 
 
