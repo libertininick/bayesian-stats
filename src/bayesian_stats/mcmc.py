@@ -5,6 +5,8 @@ iterations, so at the end of the iterations you have `N` samples approximating
 the posterior distribution.
 """
 import math
+from collections import Counter
+from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Iterable, NamedTuple, ParamSpec
 
@@ -13,6 +15,7 @@ import torch
 from scipy.stats import qmc, wasserstein_distance
 from torch import Tensor
 
+from bayesian_stats.utils import get_spearman_corrcoef
 
 P = ParamSpec("P")
 
@@ -32,12 +35,140 @@ class Bounds(NamedTuple):
     upper: float
 
 
-def get_max_wasserstein_distance(
+@dataclass(frozen=True, kw_only=True)
+class MCMCResult:
+    """Stores the output of a parallel MCMC run.
+
+    Attributes
+    ----------
+    parameters: list[str]
+        Model parameter names.
+    map_values: Tensor, shape=(num_parameters,)
+        Maximum a posteriori parameter values observed during sampling.
+    init_samples: Tensor, shape=(num_samples, num_parameters)
+        Initial state of samples.
+    samples: Tensor, shape=(num_samples, num_parameters)
+        Samples after running MCMC steps.
+    max_wasserstein_trace: Tensor, shape=(num_iter, num_parameters)
+        Trace of the Wasserstein distance between consecutive sample distributions.
+    sample_counter: dict[str, Counter]
+        Counters of iterations spent at a specific value for each parameter.
+    seed: int | None
+        Seed for MCMC run.
+    """
+
+    parameters: list[str]
+    map_values: Tensor
+    init_samples: Tensor
+    samples: Tensor
+    wasserstein_distance_trace: Tensor
+    sample_counter: dict[str, Counter]
+    seed: int | None
+
+    @property
+    def num_iter(self) -> int:
+        """Number of MCMC iterations completed."""
+        return int(self.wasserstein_distance_trace.shape[0])
+
+    @property
+    def num_parameters(self) -> int:
+        """Number of model parameters."""
+        return len(self.parameters)
+
+    @property
+    def num_samples(self) -> int:
+        """Number of MCMC samples per parameter."""
+        return int(self.samples.shape[0])
+
+    def __post_init__(self) -> None:
+        """Validate result attributes."""
+        if len(self.map_values) != self.num_parameters:
+            raise ValueError("Number of MAP values != number of parameters")
+        if self.samples.shape[1] != self.num_parameters:
+            raise ValueError(
+                "Number of parameters in samples != number of parameter names"
+            )
+
+    def get_samples(self, parameter: str, init: bool = False) -> Tensor:
+        """Get a parameter's samples by name.
+
+        Parameters
+        ----------
+        parameter: str
+            Name of parameter.
+        init: bool, optional
+            Whether to get final samples or initial samples.
+            (default = False)
+
+        Returns
+        -------
+        samples: Tensor, shape=(num_samples,)
+        """
+        if init:
+            return self.init_samples[:, self.parameters.index(parameter)]
+        else:
+            return self.samples[:, self.parameters.index(parameter)]
+
+    def get_map_estimate(self, parameter: str) -> float:
+        """Get the maximum a posteriori estimate for a parameter.
+
+        Parameters
+        ----------
+        parameter: str
+            Name of parameter.
+
+        Returns
+        -------
+        map_estimate: float
+        """
+        return self.map_values[self.parameters.index(parameter)].item()
+
+    def get_correlation_to_init(
+        self, num_bootstraps: int | None = 100
+    ) -> dict[str, Tensor]:
+        """Get the correlation of each parameter's samples with initial distribution.
+
+        This is useful as a convergence diagnostic b/c we want the final distribution
+        of samples to have forgotten its initialization. Material positive correlation
+        would therefore indicate we haven't reached convergence yet.
+
+        Parameters
+        ----------
+        num_bootstraps: int | None, optional
+            Estimate the distribution of each parameter's correlation coefficient
+            with `num_bootstraps` resamples. Hey, we are trying to be Bayesian...
+            If `None`, return the point estimate for each parameter.
+            (default = 100)
+
+        Returns
+        -------
+        corr_to_init: dict[str, Tensor],
+            Distribution of correlation to initialization for each parameter.
+        """
+        if num_bootstraps is not None:
+            bootstrap_idxs = torch.randint(
+                low=0, high=self.num_samples, size=(num_bootstraps, self.num_samples)
+            )
+            a = self.init_samples[bootstrap_idxs].permute(0, 2, 1)
+            b = self.samples[bootstrap_idxs].permute(0, 2, 1)
+        else:
+            a = self.init_samples.T
+            a = self.samples.T
+
+        corr_to_init = get_spearman_corrcoef(a, b)
+
+        if corr_to_init.ndim == 2:
+            corr_to_init = corr_to_init.T
+
+        return dict(zip(self.parameters, corr_to_init))
+
+
+def get_wasserstein_distance(
     samples_a: Tensor,
     samples_b: Tensor,
     bounds: Iterable[Bounds | tuple[float, float]],
-) -> float:
-    """Get the max Wasserstein distance of between two sets of parameter samples.
+) -> Tensor:
+    """Get the Wasserstein distance of between two sets of samples for each parameter.
 
     The Wasserstein distance is the minimum amount of distribution weight that must
     be moved, multiplied by the distance it has to be moved to transform `dist_a`
@@ -54,18 +185,19 @@ def get_max_wasserstein_distance(
 
     Returns
     -------
-    max_dist: float
-        Max Wasserstein distance across parameters for samples A and B.
+    distances: Tensor, shape=(num_parameters)
+        Wasserstein distance between samples A and B for each parameter.
     """
-    max_dist = 0.0
+    distances: list[float] = []
     for i, bounds in enumerate(bounds):
         lb, ub = bounds
-        dist_i = wasserstein_distance(
-            (samples_a[:, i].cpu().numpy() - lb) / (ub - lb),
-            (samples_b[:, i].cpu().numpy() - lb) / (ub - lb),
+        distances.append(
+            wasserstein_distance(
+                (samples_a[:, i].cpu().numpy() - lb) / (ub - lb),
+                (samples_b[:, i].cpu().numpy() - lb) / (ub - lb),
+            )
         )
-        max_dist = max(max_dist, dist_i.item())
-    return max_dist
+    return torch.tensor(distances)
 
 
 def get_proposal_distribution(samples: Tensor) -> dist.Normal:
@@ -198,7 +330,7 @@ def run_mcmc(
     device: torch.device | None = None,
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
-) -> dict[str, Tensor]:
+) -> MCMCResult:
     """Run parallel MCMC sampling.
 
     Parameters
@@ -255,6 +387,7 @@ def run_mcmc(
         dtype=dtype,
         seed=seed,
     )
+    init_samples = samples.clone()
 
     # Evaluate samples
     _eval_fxn = partial(
@@ -265,8 +398,17 @@ def run_mcmc(
     )
     sample_scores: Tensor = _eval_fxn(samples=samples)
 
+    # Set MAP parameter values
+    map_idx = sample_scores.argmax()
+    map_score = sample_scores[map_idx]
+    map_values = samples[map_idx]
+
     # Update iterations
-    for i in range(max_iter):
+    wasserstein_distance_trace: list[Tensor] = []
+    sample_counter: dict[str, Counter] = {
+        param: Counter() for param in parameter_bounds
+    }
+    for _ in range(max_iter):
         # Get proposed samples
         proposed_samples = (
             get_proposal_distribution(samples)
@@ -282,18 +424,36 @@ def run_mcmc(
         move_mask = move_prob >= torch.rand_like(move_prob)
         new_samples = torch.where(move_mask[:, None], proposed_samples, samples)
 
-        # Check change in distribution information from previous samples to
-        # updated samples to see if iterations should be stopped.
-        if tol is not None:
-            max_dist = get_max_wasserstein_distance(
-                samples, new_samples, parameter_bounds.values()
-            )
-            if max_dist <= tol:
-                # Stop iterations
-                break
+        # Calculate Wasserstein distance between samples and new_sample:
+        wasserstein_distance_trace.append(
+            get_wasserstein_distance(samples, new_samples, parameter_bounds.values())
+        )
 
-        # Update samples and scores
+        # Check for early stopping based on max Wasserstein distance
+        if tol is not None and wasserstein_distance_trace[-1].max() <= tol:
+            # Stop iterations
+            break
+
+        # Update samples, scores, MAP parameter values, and counts
         samples = new_samples
         sample_scores = torch.where(move_mask, proposed_sample_scores, sample_scores)
+        map_idx = sample_scores.argmax()
+        if sample_scores[map_idx] > map_score:
+            map_score = sample_scores[map_idx]
+            map_values = samples[map_idx]
 
-    return dict(zip(parameter_bounds, samples.T))
+        for i, param in enumerate(sample_counter):
+            sample_counter[param].update(samples[:, i].cpu().tolist())
+
+    # Collate results
+    result = MCMCResult(
+        parameters=list(parameter_bounds.keys()),
+        map_values=map_values,
+        init_samples=init_samples,
+        samples=samples,
+        wasserstein_distance_trace=torch.stack(wasserstein_distance_trace, dim=0),
+        sample_counter=sample_counter,
+        seed=seed,
+    )
+
+    return result
