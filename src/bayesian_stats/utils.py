@@ -4,7 +4,9 @@ from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
+import torch
 from numpy.typing import NDArray
+from torch import Tensor
 
 
 __all__ = [
@@ -347,6 +349,51 @@ def get_rolling_windows(
     return rolled[np.arange(0, shape[0], stride)]
 
 
+def get_spearman_corrcoef(a: Tensor, b: Tensor) -> Tensor:
+    """Calculate Spearman's rank correlation coefficient between two sets of values.
+
+    NOTE: Values are assumed to be in the last dimension of each tensor.
+
+    Parameters
+    ----------
+    a: Tensor, shape=(..., N)
+        Variables A.
+    b: Tensor, shape=(..., N)
+        Variables B.
+
+    Returns
+    -------
+    corrcoef: Tensor, shape=(B?,)
+
+
+    Examples
+    --------
+    Vector of values
+    >>> torch.manual_seed(1234)
+    >>> a = torch.randn(100)
+    >>> b = torch.randn(100)
+    >>> get_spearman_corrcoef(a, b)
+    tensor(-0.0131)
+
+    Batched
+    >>> a = torch.randn(2, 3, 100)
+    >>> b = torch.randn(2, 3, 100)
+    >>> get_spearman_corrcoef(a, b)
+    tensor([[ 0.1132, -0.0575, -0.1038],
+            [ 0.0032, -0.0042,  0.0391]])
+    """
+    # Rank and center values
+    a_ranked = rank(a, dim=-1, dtype=torch.float32)
+    a_centered = a_ranked - a_ranked.mean(dim=-1, keepdim=True)
+    b_ranked = rank(b, dim=-1, dtype=torch.float32)
+    b_centered = b_ranked - b_ranked.mean(dim=-1, keepdim=True)
+
+    # Correlation coefficient = cosine similarity on centered values
+    corrcoef = torch.cosine_similarity(a_centered, b_centered, dim=-1)
+
+    return corrcoef
+
+
 def one_hot_encode(
     x: pd.Series | NDArray[Any], var_name: str | None = None
 ) -> pd.DataFrame:
@@ -381,3 +428,24 @@ def one_hot_encode(
         data=ohe.all(1).astype(float), columns=[f"{var_name}_{lvl}" for lvl in levels]
     )
     return df_ohe
+
+
+def rank(x: Tensor, dim: int = -1, dtype: torch.dtype | None = None) -> Tensor:
+    """Rank values in along a dimension.
+
+    Parameters
+    ----------
+    x: Tensor
+        Values to rank.
+    dim: int, optional
+        Dimension to rank along.
+        (default = -1)
+    dtype: torch.dtype | None
+        Datatype to return.
+        (default = None)
+
+    Returns
+    -------
+    ranks: Tensor
+    """
+    return x.argsort(dim=dim).argsort(dim=dim).to(dtype=dtype)
