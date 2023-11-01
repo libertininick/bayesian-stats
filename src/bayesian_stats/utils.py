@@ -15,7 +15,6 @@ __all__ = [
     "get_gelman_rubin_diagnostic",
     "get_highest_density_interval",
     "get_invgamma_params",
-    "get_probability_non_zero",
     "get_rolling_windows",
     "one_hot_encode",
 ]
