@@ -278,23 +278,6 @@ def get_invgamma_params(
     )
 
 
-def get_probability_non_zero(x: NDArray[np.number]) -> float:
-    """Get probability a parameter's value is non-zero (either > 0 or < 0).
-
-    Parameters
-    ----------
-    x: NDArray[np.number]
-        Samples.
-
-    Returns
-    -------
-    probability: float
-    """
-    p_gt = (x > 0).mean().item()
-    p_lt = (x < 0).mean().item()
-    return max(p_gt, p_lt) - min(p_gt, p_lt)
-
-
 def get_rolling_windows(
     arr: NDArray[Any], window_size: int, stride: int = 1
 ) -> NDArray[Any]:
