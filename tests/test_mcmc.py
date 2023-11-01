@@ -5,11 +5,7 @@ import pytest
 import torch
 from torch import Tensor
 
-from bayesian_stats.mcmc import (
-    Bounds,
-    get_proposal_distribution,
-    initialize_samples,
-)
+from bayesian_stats.mcmc import Bounds, get_proposal_distribution, initialize_samples
 
 
 # Test constants

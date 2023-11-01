@@ -17,6 +17,7 @@ from torch import Tensor
 
 from bayesian_stats.utils import get_spearman_corrcoef
 
+
 P = ParamSpec("P")
 
 
@@ -189,8 +190,7 @@ def get_wasserstein_distance(
         Wasserstein distance between samples A and B for each parameter.
     """
     distances: list[float] = []
-    for i, bounds in enumerate(bounds):
-        lb, ub = bounds
+    for i, (lb, ub) in enumerate(bounds):
         distances.append(
             wasserstein_distance(
                 (samples_a[:, i].cpu().numpy() - lb) / (ub - lb),
