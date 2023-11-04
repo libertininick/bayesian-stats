@@ -1,11 +1,19 @@
 """Test for MCMC module."""
+from functools import partial
 
 import pyro.distributions as dist
 import pytest
+import scipy.stats as stats
 import torch
+from hypothesis import given, settings, strategies as st, target, Verbosity
 from torch import Tensor
 
-from bayesian_stats.mcmc import Bounds, get_proposal_distribution, initialize_samples
+from bayesian_stats.mcmc import (
+    Bounds,
+    get_proposal_distribution,
+    initialize_samples,
+    run_mcmc,
+)
 
 
 # Test constants
@@ -67,3 +75,44 @@ def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
     """Test a sample from the proposal distribution is correct shape."""
     proposals = proposal_dist.sample()
     assert proposals.shape == (NUM_SAMPLES, NUM_PARAMETERS)
+
+
+@pytest.mark.slow
+@given(
+    a=st.integers(min_value=1, max_value=200),
+    b=st.integers(min_value=1, max_value=200),
+    pos=st.integers(min_value=1, max_value=200),
+    neg=st.integers(min_value=1, max_value=200),
+)
+@settings(max_examples=100, deadline=None, verbosity=Verbosity.verbose)
+def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
+    """Test that MCMC samples converge to analytic solution for beta-binomial."""
+    n = pos + neg
+
+    def prior(a: float, b: float, p: Tensor) -> Tensor:
+        return dist.Beta(a, b).log_prob(p)
+
+    def likelihood(p: Tensor, n: int, k: int) -> Tensor:
+        return dist.Binomial(total_count=n, probs=p).log_prob(torch.tensor(k))
+
+    num_samples = 2**13
+
+    result = run_mcmc(
+        parameter_bounds=dict(p=(0.0, 1.0)),
+        prior=partial(prior, a=a, b=b),
+        likelihood=partial(likelihood, n=n, k=pos),
+        num_samples=num_samples,
+        max_iter=200,
+        tol=2e-4,
+        seed=1234,
+    )
+
+    posterior = stats.beta(a=a + pos, b=b + neg)
+
+    em_dist = stats.wasserstein_distance(
+        result.get_samples("p").numpy(),
+        posterior.rvs(size=num_samples, random_state=1234),
+    )
+
+    target(em_dist)
+    assert em_dist < 0.01
