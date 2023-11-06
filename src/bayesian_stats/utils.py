@@ -11,6 +11,7 @@ from torch import Tensor
 
 __all__ = [
     "get_auto_corr",
+    "get_cumulative_prob",
     "get_effective_sample_size",
     "get_gelman_rubin_diagnostic",
     "get_highest_density_interval",
@@ -72,6 +73,36 @@ def get_auto_corr(
     return np.array(
         [1.0 if lag == 0 else np.corrcoef(x[lag:], x[:-lag])[0, 1] for lag in lags]
     )
+
+
+def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
+    """Get the cumulative probability estimate for a set of values given a \
+        distribution of samples.
+
+    Parameters
+    ----------
+    samples: Tensor, shape=(B?, N)
+        Samples for approximating cumulative distribution.
+    values: Tensor, shape=(B?, M)
+        Values to get probability for.
+
+    Returns
+    -------
+    cumulative_prob: Tensor, shape=(B?, M)
+
+    Examples
+    --------
+    >>> get_cumulative_prob(torch.randn(10_000), values=torch.tensor([-2., 2.]))
+    tensor([0.0232, 0.9770])
+    """
+    samples = torch.atleast_1d(samples)
+    values = torch.atleast_1d(values)
+    if samples.shape[:-1] != values.shape[:-1]:
+        raise ValueError(
+            "The shape of `samples` and `values` must match on all but last dimension;"
+            f" got {samples.shape[:-1]} and {values.shape[:-1]}"
+        )
+    return (samples[..., None] <= values[..., None, :]).to(torch.float).mean(-2)
 
 
 def get_effective_sample_size(
