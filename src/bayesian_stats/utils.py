@@ -92,8 +92,10 @@ def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
 
     Examples
     --------
+    >>> import torch
+    >>> _ = torch.manual_seed(1234)
     >>> get_cumulative_prob(torch.randn(10_000), values=torch.tensor([-2., 2.]))
-    tensor([0.0232, 0.9770])
+    tensor([0.0242, 0.9764])
     """
     samples = torch.atleast_1d(samples)
     values = torch.atleast_1d(values)
@@ -308,6 +310,45 @@ def get_invgamma_params(
         alpha=effective_sample_size / 2.0,
         beta=variance_prior * effective_sample_size / 2.0,
     )
+
+
+def get_max_quantile_diff(
+    samples_a: Tensor,
+    samples_b: Tensor,
+    num_quantiles: int,
+) -> Tensor:
+    """Get the max difference between the quantiles of two sample distributions.
+
+    For example, if the 5% quantile value on A is the 8% value on B, this is a 3%
+    quantile difference. This function finds the maximum difference across a set
+    of quantiles for a set of parameter samples.
+
+    Parameters
+    ----------
+    samples_a: Tensor, shape=(N, P)
+        Parameter samples A.
+    samples_b: Tensor, shape=(N, P)
+        Parameter samples B.
+    num_quantiles: int
+        Number of quantiles to measure differences for.
+        Quantile levels are linearly spaced between (0, 1).
+
+    Returns
+    -------
+    diff: Tensor, shape=(P,)
+        Maximum quantile difference between samples for each parameter
+    """
+    # Get quantiles of A
+    c_probs_a = torch.linspace(0.0, 1.0, num_quantiles + 2)[1:-1].to(samples_a)
+    quantiles_a = torch.quantile(samples_a, q=c_probs_a, dim=0)
+
+    # Get cumulative probabilities of B @ quantile values of A
+    c_probs_b = get_cumulative_prob(samples_b.T, quantiles_a.T).T
+
+    # quantile-quantile differences
+    diff = torch.abs(c_probs_a[:, None] - c_probs_b)
+
+    return diff.max(dim=0).values
 
 
 def get_rolling_windows(

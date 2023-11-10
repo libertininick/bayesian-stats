@@ -14,6 +14,7 @@ from bayesian_stats.mcmc import (
     initialize_samples,
     run_mcmc,
 )
+from bayesian_stats.utils import get_max_quantile_diff
 
 
 # Test constants
@@ -84,35 +85,42 @@ def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
     pos=st.integers(min_value=1, max_value=200),
     neg=st.integers(min_value=1, max_value=200),
 )
-@settings(max_examples=100, deadline=None, verbosity=Verbosity.verbose)
+@settings(max_examples=500, deadline=None, verbosity=Verbosity.verbose)
 def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
     """Test that MCMC samples converge to analytic solution for beta-binomial."""
     n = pos + neg
 
-    def prior(a: float, b: float, p: Tensor) -> Tensor:
+    def prior_fun(a: float, b: float, p: Tensor) -> Tensor:
         return dist.Beta(a, b).log_prob(p)
 
-    def likelihood(p: Tensor, n: int, k: int) -> Tensor:
+    def likelihood_fun(p: Tensor, n: int, k: int) -> Tensor:
         return dist.Binomial(total_count=n, probs=p).log_prob(torch.tensor(k))
 
     num_samples = 2**13
 
     result = run_mcmc(
         parameter_bounds=dict(p=(0.0, 1.0)),
-        prior=partial(prior, a=a, b=b),
-        likelihood=partial(likelihood, n=n, k=pos),
+        prior_fun=partial(prior_fun, a=a, b=b),
+        likelihood_fun=partial(likelihood_fun, n=n, k=pos),
         num_samples=num_samples,
         max_iter=200,
-        tol=2e-4,
         seed=1234,
+        verbose=False,
     )
 
     posterior = stats.beta(a=a + pos, b=b + neg)
 
-    em_dist = stats.wasserstein_distance(
-        result.get_samples("p").numpy(),
-        posterior.rvs(size=num_samples, random_state=1234),
+    analytic_samples = torch.from_numpy(
+        posterior.rvs(size=num_samples, random_state=1234)
+    ).to(torch.float32)
+
+    qdiff_dist = float(
+        get_max_quantile_diff(
+            result.get_samples("p")[:, None],
+            analytic_samples[:, None],
+            num_quantiles=100,
+        ).item()
     )
 
-    target(em_dist)
-    assert em_dist < 0.01
+    target(qdiff_dist)
+    assert qdiff_dist < 0.03

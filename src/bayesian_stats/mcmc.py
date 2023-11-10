@@ -12,10 +12,10 @@ from typing import Callable, Iterable, NamedTuple, ParamSpec
 
 import pyro.distributions as dist
 import torch
-from scipy.stats import qmc, wasserstein_distance
+from scipy.stats import qmc
 from torch import Tensor
 
-from bayesian_stats.utils import get_spearman_corrcoef
+from bayesian_stats.utils import get_max_quantile_diff, get_spearman_corrcoef
 
 
 P = ParamSpec("P")
@@ -42,16 +42,18 @@ class MCMCResult:
 
     Attributes
     ----------
-    parameters: list[str]
+    parameters: list[str], len=P
         Model parameter names.
-    map_values: Tensor, shape=(num_parameters,)
+    map_values: Tensor, shape=(P,)
         Maximum a posteriori parameter values observed during sampling.
-    init_samples: Tensor, shape=(num_samples, num_parameters)
-        Initial state of samples.
-    samples: Tensor, shape=(num_samples, num_parameters)
-        Samples after running MCMC steps.
-    max_wasserstein_trace: Tensor, shape=(num_iter, num_parameters)
-        Trace of the Wasserstein distance between consecutive sample distributions.
+    samples: Tensor, shape=(N, P)
+        Samples for each parameter after running MCMC iterations.
+    correlation_traces: Tensor, shape=(M, P)
+        Trace of the Spearman Rank Correlation between current sample distribution \
+        and the initial sample distribution for each parameter.
+    max_quantile_diff_traces: Tensor, shape=(M, P)
+        Trace of the max quantile differences between consecutive sample distributions \
+        for each parameter.
     sample_counter: dict[str, Counter]
         Counters of iterations spent at a specific value for each parameter.
     seed: int | None
@@ -60,16 +62,16 @@ class MCMCResult:
 
     parameters: list[str]
     map_values: Tensor
-    init_samples: Tensor
     samples: Tensor
-    wasserstein_distance_trace: Tensor
+    correlation_traces: Tensor
+    max_quantile_diff_traces: Tensor
     sample_counter: dict[str, Counter]
     seed: int | None
 
     @property
     def num_iter(self) -> int:
         """Number of MCMC iterations completed."""
-        return int(self.wasserstein_distance_trace.shape[0])
+        return int(self.correlation_traces.shape[0])
 
     @property
     def num_parameters(self) -> int:
@@ -90,25 +92,19 @@ class MCMCResult:
                 "Number of parameters in samples != number of parameter names"
             )
 
-    def get_samples(self, parameter: str, init: bool = False) -> Tensor:
+    def get_samples(self, parameter: str) -> Tensor:
         """Get a parameter's samples by name.
 
         Parameters
         ----------
         parameter: str
             Name of parameter.
-        init: bool, optional
-            Whether to get final samples or initial samples.
-            (default = False)
 
         Returns
         -------
         samples: Tensor, shape=(num_samples,)
         """
-        if init:
-            return self.init_samples[:, self.parameters.index(parameter)]
-        else:
-            return self.samples[:, self.parameters.index(parameter)]
+        return self.samples[:, self.parameters.index(parameter)]
 
     def get_map_estimate(self, parameter: str) -> float:
         """Get the maximum a posteriori estimate for a parameter.
@@ -124,10 +120,8 @@ class MCMCResult:
         """
         return self.map_values[self.parameters.index(parameter)].item()
 
-    def get_correlation_to_init(
-        self, num_bootstraps: int | None = 100
-    ) -> dict[str, Tensor]:
-        """Get the correlation of each parameter's samples with initial distribution.
+    def get_correlation_trace(self, parameter: str) -> Tensor:
+        """Get trace of a parameter's samples correlation with initial its distribution.
 
         This is useful as a convergence diagnostic b/c we want the final distribution
         of samples to have forgotten its initialization. Material positive correlation
@@ -135,69 +129,33 @@ class MCMCResult:
 
         Parameters
         ----------
-        num_bootstraps: int | None, optional
-            Estimate the distribution of each parameter's correlation coefficient
-            with `num_bootstraps` resamples. Hey, we are trying to be Bayesian...
-            If `None`, return the point estimate for each parameter.
-            (default = 100)
+        parameter: str
+            Name of parameter.
 
         Returns
         -------
-        corr_to_init: dict[str, Tensor],
-            Distribution of correlation to initialization for each parameter.
+        correlation: Tensor, shape=(num_iter,)
         """
-        if num_bootstraps is not None:
-            bootstrap_idxs = torch.randint(
-                low=0, high=self.num_samples, size=(num_bootstraps, self.num_samples)
-            )
-            a = self.init_samples[bootstrap_idxs].permute(0, 2, 1)
-            b = self.samples[bootstrap_idxs].permute(0, 2, 1)
-        else:
-            a = self.init_samples.T
-            a = self.samples.T
+        return self.correlation_traces[:, self.parameters.index(parameter)]
 
-        corr_to_init = get_spearman_corrcoef(a, b)
+    def get_max_quantile_diff_trace(self, parameter: str) -> Tensor:
+        """Get trace of a parameter's max quantile difference between consecutive \
+            sample distributions.
 
-        if corr_to_init.ndim == 2:
-            corr_to_init = corr_to_init.T
+        This is useful as a convergence diagnostic b/c we want the quantile difference
+        between consecutive sample distributions to stop drifting downward and 
+        stabilize,indicating the parameter's sample distribution has reach convergence.
 
-        return dict(zip(self.parameters, corr_to_init))
+        Parameters
+        ----------
+        parameter: str
+            Name of parameter.
 
-
-def get_wasserstein_distance(
-    samples_a: Tensor,
-    samples_b: Tensor,
-    bounds: Iterable[Bounds | tuple[float, float]],
-) -> Tensor:
-    """Get the Wasserstein distance of between two sets of samples for each parameter.
-
-    The Wasserstein distance is the minimum amount of distribution weight that must
-    be moved, multiplied by the distance it has to be moved to transform `dist_a`
-    into `dist_b`.
-
-    Parameters
-    ----------
-    samples_a: Tensor, shape(num_samples, num_parameters)
-        Sample distributions A.
-    samples_b: Tensor, shape(num_samples, num_parameters)
-        Sample distributions B.
-    bounds: Iterable[Bounds]
-        Parameter bounds.
-
-    Returns
-    -------
-    distances: Tensor, shape=(num_parameters)
-        Wasserstein distance between samples A and B for each parameter.
-    """
-    distances: list[float] = []
-    for i, (lb, ub) in enumerate(bounds):
-        distances.append(
-            wasserstein_distance(
-                (samples_a[:, i].cpu().numpy() - lb) / (ub - lb),
-                (samples_b[:, i].cpu().numpy() - lb) / (ub - lb),
-            )
-        )
-    return torch.tensor(distances)
+        Returns
+        -------
+        max_quantile_diff: Tensor, shape=(M,)
+        """
+        return self.max_quantile_diff_traces[:, self.parameters.index(parameter)]
 
 
 def get_proposal_distribution(samples: Tensor) -> dist.Normal:
@@ -228,10 +186,10 @@ def get_proposal_distribution(samples: Tensor) -> dist.Normal:
 def get_sample_log_prob(
     parameters: list[str],
     samples: Tensor,
-    prior: Callable[P, Tensor],
-    likelihood: Callable[P, Tensor] | None,
+    prior_fun: Callable[P, Tensor] | None,
+    likelihood_fun: Callable[P, Tensor] | None,
 ) -> Tensor:
-    """Get un-normalized log probability of samples from likelihood and prior functions.
+    """Get log probability of samples.
 
     Parameters
     ----------
@@ -239,30 +197,37 @@ def get_sample_log_prob(
         Model parameter names.
     samples: Tensor, shape=(num_samples, num_parameters)
         Samples for each parameter.
-    prior: Callable[..., Tensor]
+    prior_fun: Callable[..., Tensor] | None
         Function that takes parameter samples as Tensors and returns a single Tensor \
             for the joint prior log probability.
-    likelihood: Callable[..., Tensor] | None
-        Function w/ same parameter signature as `prior`, that takes parameter samples \
-            as Tensors and returns a single Tensor for the joint log likelihood. \
-            If `None`, then only prior joint probability will be returned.
+    likelihood_fun: Callable[..., Tensor] | None
+        Function that takes parameter samples as Tensors and returns a single Tensor \
+            for the joint log likelihood.
 
     Returns
     -------
-    log_probs: : Tensor, shape=(num_samples,)
-        Un-normalized log probability of samples.
+    log_prob: : Tensor, shape=(num_samples,)
+        Log probability of samples.
+
+    Raises
+    ------
+    ValueError
+        If both `prior_fun` and `likelihood` are None.
     """
     # Convert sample tensor to sample dict
     sample_dict = dict(zip(parameters, samples.T))
 
-    # Get joint prior log probability given parameter samples
-    log_probs = prior(**sample_dict)
+    # Compute log probabilities
+    if prior_fun is None and likelihood_fun is None:
+        raise ValueError("Both `prior_fun` and `likelihood_fun` are None")
+    elif prior_fun is None:
+        log_prob = likelihood_fun(**sample_dict)
+    elif likelihood_fun is None:
+        log_prob = prior_fun(**sample_dict)
+    else:
+        log_prob = prior_fun(**sample_dict) + likelihood_fun(**sample_dict)
 
-    if likelihood is not None:
-        # Add the joint log likelihood given parameter samples
-        log_probs += likelihood(**sample_dict)
-
-    return log_probs
+    return log_prob
 
 
 def initialize_samples(
@@ -321,15 +286,17 @@ def initialize_samples(
 
 def run_mcmc(
     parameter_bounds: dict[str, Bounds],
-    prior: Callable[P, Tensor],
-    likelihood: Callable[P, Tensor] | None,
+    prior_fun: Callable[P, Tensor] | None,
+    likelihood_fun: Callable[P, Tensor] | None,
     num_samples: int,
     *,
     max_iter: int = 1_000,
-    tol: float | None = None,
+    max_corr: float = 0.025,
+    max_qdiff: float = 0.005,
     device: torch.device | None = None,
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
+    verbose: bool = True,
 ) -> MCMCResult:
     """Run parallel MCMC sampling.
 
@@ -337,24 +304,26 @@ def run_mcmc(
     ----------
     parameter_bounds: dict[str, Bounds]
         Bounds for each parameter in `prior` and `likelihood` spec.
-    prior: Callable[..., Tensor]
+    prior_fun: Callable[..., Tensor] | None
         Function that takes parameter samples as Tensors and returns a single Tensor \
             for the joint prior log probability.
-    likelihood: Callable[..., Tensor] | None
+    likelihood_fun: Callable[..., Tensor] | None
         Function w/ same parameter signature as `prior`, that takes parameter samples \
-            as Tensors and returns a single Tensor for the joint log likelihood. \
-            If `None`, then only prior joint probability will be returned.
+            as Tensors and returns a single Tensor for the joint log likelihood.
     num_samples: int
         Number of MCMC samples.
     max_iter: int, optional
         Maximum number of iterations to evolve samples for.
         (default = 1_000)
-    tol: float | None, optional
-        Wasserstein distance for early stopping. If the maximum change in sampling \
-            distributions from one iteration to the next is less than this value \
-            iterations will be stopped and the sampling distribution returned. \
-            If `None`, then will run to `max_iter`.
-            (default = None)
+    max_corr: float, optional
+        Maximum correlation between current sample distribution and initial sample \
+        distribution for any parameter to allow early stopping of MCMC iterations.
+        (default = 5%)
+    max_qdiff: float, optional
+        If the maximum quantile difference between the sampling distribution from \
+        one iteration to the next is less than this value for all parameters, and
+        the `max_corr` constraint has been satisfied, MCMC iterations will be stopped.
+        (default = 0.005)
     device: torch.device | None, optional
         Compute device for samples.
         (default = None)
@@ -364,7 +333,6 @@ def run_mcmc(
     seed: int | None, optional
         Random state seed.
         (default = None)
-
 
     Returns
     -------
@@ -393,10 +361,10 @@ def run_mcmc(
     _eval_fxn = partial(
         get_sample_log_prob,
         parameters=list(parameter_bounds.keys()),
-        prior=prior,
-        likelihood=likelihood,
+        prior_fun=prior_fun,
+        likelihood_fun=likelihood_fun,
     )
-    sample_scores: Tensor = _eval_fxn(samples=samples)
+    sample_scores = _eval_fxn(samples=samples)
 
     # Set MAP parameter values
     map_idx = sample_scores.argmax()
@@ -404,11 +372,13 @@ def run_mcmc(
     map_values = samples[map_idx]
 
     # Update iterations
-    wasserstein_distance_trace: list[Tensor] = []
+    correlation_traces: list[Tensor] = []
+    max_quantile_diff_traces: list[Tensor] = []
     sample_counter: dict[str, Counter] = {
         param: Counter() for param in parameter_bounds
     }
-    for _ in range(max_iter):
+
+    for i in range(max_iter):
         # Get proposed samples
         proposed_samples = (
             get_proposal_distribution(samples)
@@ -417,20 +387,25 @@ def run_mcmc(
         )
 
         # Evaluate proposed samples
-        proposed_sample_scores: Tensor = _eval_fxn(samples=proposed_samples)
+        proposed_sample_scores = _eval_fxn(samples=proposed_samples)
 
         # Decide whether to move to proposed for each sample
         move_prob = torch.sigmoid(proposed_sample_scores - sample_scores)
         move_mask = move_prob >= torch.rand_like(move_prob)
         new_samples = torch.where(move_mask[:, None], proposed_samples, samples)
 
-        # Calculate Wasserstein distance between samples and new_sample:
-        wasserstein_distance_trace.append(
-            get_wasserstein_distance(samples, new_samples, parameter_bounds.values())
+        # Calculation correlation between initial samples and new samples
+        correlation_traces.append(get_spearman_corrcoef(init_samples.T, new_samples.T))
+
+        # Calculate max quantile difference between previous samples and new samples
+        max_quantile_diff_traces.append(
+            get_max_quantile_diff(samples, new_samples, int(num_samples**0.5))
         )
 
-        # Check for early stopping based on max Wasserstein distance
-        if tol is not None and wasserstein_distance_trace[-1].max() <= tol:
+        # Check for early stopping
+        max_corr_i = correlation_traces[-1].max()
+        max_qdiff_i = max_quantile_diff_traces[-1].max()
+        if max_corr_i <= max_corr and max_qdiff_i <= max_qdiff:
             # Stop iterations
             break
 
@@ -442,16 +417,26 @@ def run_mcmc(
             map_score = sample_scores[map_idx]
             map_values = samples[map_idx]
 
-        for i, param in enumerate(sample_counter):
-            sample_counter[param].update(samples[:, i].cpu().tolist())
+        for j, param in enumerate(sample_counter):
+            sample_counter[param].update(samples[:, j].cpu().tolist())
+
+        if verbose:
+            # Print progress bar
+            n_done = int((i + 1) / max_iter * 100)
+            print(
+                f"""{"█" * n_done}{" " * (100 - n_done)} | {(i+1):>6,}/{max_iter:,}"""
+                f" | {max_corr_i:>5.1%} | {max_qdiff_i:>7.5f}",
+                flush=True,
+                end="\r",
+            )
 
     # Collate results
     result = MCMCResult(
         parameters=list(parameter_bounds.keys()),
         map_values=map_values,
-        init_samples=init_samples,
         samples=samples,
-        wasserstein_distance_trace=torch.stack(wasserstein_distance_trace, dim=0),
+        correlation_traces=torch.stack(correlation_traces, dim=0),
+        max_quantile_diff_traces=torch.stack(max_quantile_diff_traces, dim=0),
         sample_counter=sample_counter,
         seed=seed,
     )
