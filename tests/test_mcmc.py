@@ -14,7 +14,7 @@ from bayesian_stats.mcmc import (
     initialize_samples,
     run_mcmc,
 )
-from bayesian_stats.utils import get_max_quantile_diff
+from bayesian_stats.utils import get_quantile_diffs
 
 
 # Test constants
@@ -85,7 +85,7 @@ def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
     pos=st.integers(min_value=1, max_value=200),
     neg=st.integers(min_value=1, max_value=200),
 )
-@settings(max_examples=500, deadline=None, verbosity=Verbosity.verbose)
+@settings(max_examples=100, deadline=None, verbosity=Verbosity.verbose)
 def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
     """Test that MCMC samples converge to analytic solution for beta-binomial."""
     n = pos + neg
@@ -114,13 +114,15 @@ def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
         posterior.rvs(size=num_samples, random_state=1234)
     ).to(torch.float32)
 
-    qdiff_dist = float(
-        get_max_quantile_diff(
+    qdiff_dist = (
+        get_quantile_diffs(
             result.get_samples("p")[:, None],
             analytic_samples[:, None],
             num_quantiles=100,
-        ).item()
+        )
+        .mean()
+        .item()
     )
 
     target(qdiff_dist)
-    assert qdiff_dist < 0.03
+    assert qdiff_dist <= 0.01

@@ -15,7 +15,7 @@ import torch
 from scipy.stats import qmc
 from torch import Tensor
 
-from bayesian_stats.utils import get_max_quantile_diff, get_spearman_corrcoef
+from bayesian_stats.utils import get_quantile_diffs, get_spearman_corrcoef
 
 
 P = ParamSpec("P")
@@ -42,18 +42,18 @@ class MCMCResult:
 
     Attributes
     ----------
-    parameters: list[str], len=P
+    parameters: list[str], len=num_parameters
         Model parameter names.
-    map_values: Tensor, shape=(P,)
+    map_values: Tensor, shape=(num_parameters,)
         Maximum a posteriori parameter values observed during sampling.
-    samples: Tensor, shape=(N, P)
+    samples: Tensor, shape=(num_samples, num_parameters)
         Samples for each parameter after running MCMC iterations.
-    correlation_traces: Tensor, shape=(M, P)
+    correlation_traces: Tensor, shape=(num_iter, num_parameters)
         Trace of the Spearman Rank Correlation between current sample distribution \
         and the initial sample distribution for each parameter.
-    max_quantile_diff_traces: Tensor, shape=(M, P)
-        Trace of the max quantile differences between consecutive sample distributions \
-        for each parameter.
+    avg_quantile_diff_traces: Tensor, shape=(num_iter, num_parameters)
+        Trace of the average quantile differences between consecutive sample \
+        distributions for each parameter.
     sample_counter: dict[str, Counter]
         Counters of iterations spent at a specific value for each parameter.
     seed: int | None
@@ -64,7 +64,7 @@ class MCMCResult:
     map_values: Tensor
     samples: Tensor
     correlation_traces: Tensor
-    max_quantile_diff_traces: Tensor
+    avg_quantile_diff_traces: Tensor
     sample_counter: dict[str, Counter]
     seed: int | None
 
@@ -138,8 +138,8 @@ class MCMCResult:
         """
         return self.correlation_traces[:, self.parameters.index(parameter)]
 
-    def get_max_quantile_diff_trace(self, parameter: str) -> Tensor:
-        """Get trace of a parameter's max quantile difference between consecutive \
+    def get_avg_quantile_diff_trace(self, parameter: str) -> Tensor:
+        """Get trace of a parameter's average quantile difference between consecutive \
             sample distributions.
 
         This is useful as a convergence diagnostic b/c we want the quantile difference
@@ -153,9 +153,9 @@ class MCMCResult:
 
         Returns
         -------
-        max_quantile_diff: Tensor, shape=(M,)
+        avg_quantile_diff: Tensor, shape=(num_iter,)
         """
-        return self.max_quantile_diff_traces[:, self.parameters.index(parameter)]
+        return self.avg_quantile_diff_traces[:, self.parameters.index(parameter)]
 
 
 def get_proposal_distribution(samples: Tensor) -> dist.Normal:
@@ -292,7 +292,7 @@ def run_mcmc(
     *,
     max_iter: int = 1_000,
     max_corr: float = 0.025,
-    max_qdiff: float = 0.005,
+    max_qdiff: float = 0.001,
     device: torch.device | None = None,
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
@@ -320,7 +320,7 @@ def run_mcmc(
         distribution for any parameter to allow early stopping of MCMC iterations.
         (default = 5%)
     max_qdiff: float, optional
-        If the maximum quantile difference between the sampling distribution from \
+        If the average quantile difference between the sampling distribution from \
         one iteration to the next is less than this value for all parameters, and
         the `max_corr` constraint has been satisfied, MCMC iterations will be stopped.
         (default = 0.005)
@@ -373,7 +373,7 @@ def run_mcmc(
 
     # Update iterations
     correlation_traces: list[Tensor] = []
-    max_quantile_diff_traces: list[Tensor] = []
+    avg_quantile_diff_traces: list[Tensor] = []
     sample_counter: dict[str, Counter] = {
         param: Counter() for param in parameter_bounds
     }
@@ -397,14 +397,16 @@ def run_mcmc(
         # Calculation correlation between initial samples and new samples
         correlation_traces.append(get_spearman_corrcoef(init_samples.T, new_samples.T))
 
-        # Calculate max quantile difference between previous samples and new samples
-        max_quantile_diff_traces.append(
-            get_max_quantile_diff(samples, new_samples, int(num_samples**0.5))
+        # Calculate avg quantile difference between previous samples and new samples
+        avg_quantile_diff_traces.append(
+            get_quantile_diffs(samples, new_samples, int(num_samples**0.5)).mean(
+                dim=0
+            )
         )
 
         # Check for early stopping
         max_corr_i = correlation_traces[-1].max()
-        max_qdiff_i = max_quantile_diff_traces[-1].max()
+        max_qdiff_i = avg_quantile_diff_traces[-1].max()
         if max_corr_i <= max_corr and max_qdiff_i <= max_qdiff:
             # Stop iterations
             break
@@ -436,7 +438,7 @@ def run_mcmc(
         map_values=map_values,
         samples=samples,
         correlation_traces=torch.stack(correlation_traces, dim=0),
-        max_quantile_diff_traces=torch.stack(max_quantile_diff_traces, dim=0),
+        avg_quantile_diff_traces=torch.stack(avg_quantile_diff_traces, dim=0),
         sample_counter=sample_counter,
         seed=seed,
     )

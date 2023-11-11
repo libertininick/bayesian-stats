@@ -16,6 +16,7 @@ __all__ = [
     "get_gelman_rubin_diagnostic",
     "get_highest_density_interval",
     "get_invgamma_params",
+    "get_quantile_diffs",
     "get_rolling_windows",
     "get_spearman_corrcoef",
     "one_hot_encode",
@@ -312,22 +313,21 @@ def get_invgamma_params(
     )
 
 
-def get_max_quantile_diff(
+def get_quantile_diffs(
     samples_a: Tensor,
     samples_b: Tensor,
     num_quantiles: int,
 ) -> Tensor:
-    """Get the max difference between the quantiles of two sample distributions.
+    """Get the absolute difference between the quantiles of two sample distributions.
 
-    For example, if the 5% quantile value on A is the 8% value on B, this is a 3%
-    quantile difference. This function finds the maximum difference across a set
-    of quantiles for a set of parameter samples.
+    For example, if the 5% quantile value on A is the 8% value on B, there is a 3%
+    difference for A's 5% quantile.
 
     Parameters
     ----------
-    samples_a: Tensor, shape=(N, P)
+    samples_a: Tensor, shape=(num_samples, num_parameters)
         Parameter samples A.
-    samples_b: Tensor, shape=(N, P)
+    samples_b: Tensor, shape=(num_samples, num_parameters)
         Parameter samples B.
     num_quantiles: int
         Number of quantiles to measure differences for.
@@ -335,8 +335,8 @@ def get_max_quantile_diff(
 
     Returns
     -------
-    diff: Tensor, shape=(P,)
-        Maximum quantile difference between samples for each parameter
+    diff: Tensor, shape=(num_quantiles, num_parameters)
+        Quantile differences between samples for each parameter
     """
     # Get quantiles of A
     c_probs_a = torch.linspace(0.0, 1.0, num_quantiles + 2)[1:-1].to(samples_a)
@@ -346,9 +346,7 @@ def get_max_quantile_diff(
     c_probs_b = get_cumulative_prob(samples_b.T, quantiles_a.T).T
 
     # quantile-quantile differences
-    diff = torch.abs(c_probs_a[:, None] - c_probs_b)
-
-    return diff.max(dim=0).values
+    return torch.abs(c_probs_a[:, None] - c_probs_b)
 
 
 def get_rolling_windows(
