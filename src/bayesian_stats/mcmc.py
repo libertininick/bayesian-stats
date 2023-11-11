@@ -143,7 +143,7 @@ class MCMCResult:
             sample distributions.
 
         This is useful as a convergence diagnostic b/c we want the quantile difference
-        between consecutive sample distributions to stop drifting downward and 
+        between consecutive sample distributions to stop drifting downward and
         stabilize,indicating the parameter's sample distribution has reach convergence.
 
         Parameters
