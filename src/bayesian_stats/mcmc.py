@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Iterable, NamedTuple, ParamSpec
 
+import pandas as pd
 import pyro.distributions as dist
 import torch
 from scipy.stats import qmc
@@ -91,6 +92,15 @@ class MCMCResult:
             raise ValueError(
                 "Number of parameters in samples != number of parameter names"
             )
+
+    def get_posterior_summary(self) -> pd.DataFrame:
+        """Get a summary of posterior parameter samples."""
+        return (
+            pd.DataFrame(data=self.samples.cpu().numpy(), columns=self.parameters)
+            .describe()
+            .drop("count")
+            .T
+        )
 
     def get_samples(self, parameter: str) -> Tensor:
         """Get a parameter's samples by name.
