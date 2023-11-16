@@ -5,7 +5,7 @@ import pyro.distributions as dist
 import pytest
 import scipy.stats as stats
 import torch
-from hypothesis import given, settings, strategies as st, target, Verbosity
+from hypothesis import given, seed, settings, strategies as st, target, Verbosity
 from torch import Tensor
 
 from bayesian_stats.mcmc import (
@@ -79,6 +79,7 @@ def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
 
 
 @pytest.mark.slow
+@seed(1234)
 @given(
     a=st.integers(min_value=1, max_value=200),
     b=st.integers(min_value=1, max_value=200),
