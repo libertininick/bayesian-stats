@@ -16,7 +16,10 @@ import torch
 from scipy.stats import qmc
 from torch import Tensor
 
-from bayesian_stats.utils import get_quantile_diffs, get_spearman_corrcoef
+from bayesian_stats.utils import (
+    get_spearman_corrcoef,
+    get_wasserstein_distance,
+)
 
 
 P = ParamSpec("P")
@@ -49,11 +52,15 @@ class MCMCResult:
         Maximum a posteriori parameter values observed during sampling.
     samples: Tensor, shape=(num_samples, num_parameters)
         Samples for each parameter after running MCMC iterations.
+    split_a_idxs: Tensor, shape=(num_samples / 2, num_parameters), dtype=int64
+        Split A indexes.
+    split_b_idxs: Tensor, shape=(num_samples / 2, num_parameters), dtype=int64
+        Split B indexes.
     correlation_traces: Tensor, shape=(num_iter, num_parameters)
-        Trace of the Spearman Rank Correlation between current sample distribution \
+        Trace of the Spearman Rank Correlation between current sample distribution
         and the initial sample distribution for each parameter.
-    avg_quantile_diff_traces: Tensor, shape=(num_iter, num_parameters)
-        Trace of the average quantile differences between consecutive sample \
+    wasserstein_distance_traces: Tensor, shape=(num_iter, num_parameters)
+        Trace of the Wasserstein distance between split A and B of the sample
         distributions for each parameter.
     sample_counter: dict[str, Counter]
         Counters of iterations spent at a specific value for each parameter.
@@ -64,8 +71,10 @@ class MCMCResult:
     parameters: list[str]
     map_values: Tensor
     samples: Tensor
+    split_a_idxs: Tensor
+    split_b_idxs: Tensor
     correlation_traces: Tensor
-    avg_quantile_diff_traces: Tensor
+    wasserstein_distance_traces: Tensor
     sample_counter: dict[str, Counter]
     seed: int | None
 
@@ -102,19 +111,32 @@ class MCMCResult:
             .T
         )
 
-    def get_samples(self, parameter: str) -> Tensor:
+    def get_samples(self, parameter: str, split: str | None = None) -> Tensor:
         """Get a parameter's samples by name.
 
         Parameters
         ----------
         parameter: str
             Name of parameter.
+        split: {'a', 'b'} | None, optional
+            Get samples for split A or B.
+            If `None`, return all samples.
+            (default = None)
 
         Returns
         -------
         samples: Tensor, shape=(num_samples,)
         """
-        return self.samples[:, self.parameters.index(parameter)]
+        samples = self.samples
+        if split is not None:
+            if split == "a":
+                index = self.split_a_idxs
+            elif split == "b":
+                index = self.split_b_idxs
+            else:
+                raise ValueError(f"Expecting 'a' or 'b'; got {split}")
+            samples = torch.gather(samples, dim=0, index=index)
+        return samples[:, self.parameters.index(parameter)]
 
     def get_map_estimate(self, parameter: str) -> float:
         """Get the maximum a posteriori estimate for a parameter.
@@ -148,13 +170,15 @@ class MCMCResult:
         """
         return self.correlation_traces[:, self.parameters.index(parameter)]
 
-    def get_avg_quantile_diff_trace(self, parameter: str) -> Tensor:
-        """Get trace of a parameter's average quantile difference between consecutive \
-            sample distributions.
+    def get_wasserstein_distance_trace(self, parameter: str) -> Tensor:
+        """Get trace of a parameter's Wasserstein distance between split A and B.
 
-        This is useful as a convergence diagnostic b/c we want the quantile difference
-        between consecutive sample distributions to stop drifting downward and
-        stabilize,indicating the parameter's sample distribution has reach convergence.
+        This is useful as a convergence diagnostic because at initialization,
+        split A contains rank 1 to N/2 values (smallest half) while split B
+        contains rank N/2 + 1 to N values (largest half). By definition these splits
+        are completely unmixed and have maximal Wasserstein. As sampling progresses
+        we want to see A and B mix well so their Wasserstein distance approaches 0,
+        indicating the parameter's sample distribution has reach convergence.
 
         Parameters
         ----------
@@ -165,7 +189,7 @@ class MCMCResult:
         -------
         avg_quantile_diff: Tensor, shape=(num_iter,)
         """
-        return self.avg_quantile_diff_traces[:, self.parameters.index(parameter)]
+        return self.wasserstein_distance_traces[:, self.parameters.index(parameter)]
 
 
 def get_proposal_distribution(samples: Tensor) -> dist.Normal:
@@ -302,7 +326,7 @@ def run_mcmc(
     *,
     max_iter: int = 1_000,
     max_corr: float = 0.025,
-    max_qdiff: float = 0.001,
+    max_split_distance: float = 0.005,
     device: torch.device | None = None,
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
@@ -329,8 +353,8 @@ def run_mcmc(
         Maximum correlation between current sample distribution and initial sample \
         distribution for any parameter to allow early stopping of MCMC iterations.
         (default = 5%)
-    max_qdiff: float, optional
-        If the average quantile difference between the sampling distribution from \
+    max_split_distance: float, optional
+        If the max Wasser the sampling distribution from \
         one iteration to the next is less than this value for all parameters, and
         the `max_corr` constraint has been satisfied, MCMC iterations will be stopped.
         (default = 0.005)
@@ -366,6 +390,9 @@ def run_mcmc(
         seed=seed,
     )
     init_samples = samples.clone()
+    init_sample_isort = init_samples.argsort(0)
+    split_a_idxs = init_sample_isort[: num_samples // 2]
+    split_b_idxs = init_sample_isort[num_samples // 2 :]
 
     # Evaluate samples
     _eval_fxn = partial(
@@ -383,7 +410,7 @@ def run_mcmc(
 
     # Update iterations
     correlation_traces: list[Tensor] = []
-    avg_quantile_diff_traces: list[Tensor] = []
+    wasserstein_distance_traces: list[Tensor] = []
     sample_counter: dict[str, Counter] = {
         param: Counter() for param in parameter_bounds
     }
@@ -402,27 +429,9 @@ def run_mcmc(
         # Decide whether to move to proposed for each sample
         move_prob = torch.sigmoid(proposed_sample_scores - sample_scores)
         move_mask = move_prob >= torch.rand_like(move_prob)
-        new_samples = torch.where(move_mask[:, None], proposed_samples, samples)
+        samples = torch.where(move_mask[:, None], proposed_samples, samples)
 
-        # Calculation correlation between initial samples and new samples
-        correlation_traces.append(get_spearman_corrcoef(init_samples.T, new_samples.T))
-
-        # Calculate avg quantile difference between previous samples and new samples
-        avg_quantile_diff_traces.append(
-            get_quantile_diffs(samples, new_samples, int(num_samples**0.5)).mean(
-                dim=0
-            )
-        )
-
-        # Check for early stopping
-        max_corr_i = correlation_traces[-1].max()
-        max_qdiff_i = avg_quantile_diff_traces[-1].max()
-        if max_corr_i <= max_corr and max_qdiff_i <= max_qdiff:
-            # Stop iterations
-            break
-
-        # Update samples, scores, MAP parameter values, and counts
-        samples = new_samples
+        # Update samples scores, MAP parameter values, and counts
         sample_scores = torch.where(move_mask, proposed_sample_scores, sample_scores)
         map_idx = sample_scores.argmax()
         if sample_scores[map_idx] > map_score:
@@ -432,12 +441,30 @@ def run_mcmc(
         for j, param in enumerate(sample_counter):
             sample_counter[param].update(samples[:, j].cpu().tolist())
 
+        # Calculation correlation between initial samples and current samples
+        correlation_traces.append(get_spearman_corrcoef(init_samples.T, samples.T))
+
+        # Calculate Wasserstein distance between split A and B for each parameter
+        wasserstein_distance_traces.append(
+            get_wasserstein_distance(
+                a=torch.gather(samples, 0, split_a_idxs).T,
+                b=torch.gather(samples, 0, split_b_idxs).T,
+            )
+        )
+
+        # Check for early stopping
+        max_corr_i = correlation_traces[-1].max()
+        max_splt_dist_i = wasserstein_distance_traces[-1].max()
+        if max_corr_i <= max_corr and max_splt_dist_i <= max_split_distance:
+            # Stop iterations
+            break
+
         if verbose:
             # Print progress bar
             n_done = int((i + 1) / max_iter * 100)
             print(
                 f"""{"█" * n_done}{" " * (100 - n_done)} | {(i+1):>6,}/{max_iter:,}"""
-                f" | {max_corr_i:>5.1%} | {max_qdiff_i:>7.5f}",
+                f" | {max_corr_i:>5.1%} | {max_splt_dist_i:>7.5f}",
                 flush=True,
                 end="\r",
             )
@@ -447,8 +474,10 @@ def run_mcmc(
         parameters=list(parameter_bounds.keys()),
         map_values=map_values,
         samples=samples,
+        split_a_idxs=split_a_idxs,
+        split_b_idxs=split_b_idxs,
         correlation_traces=torch.stack(correlation_traces, dim=0),
-        avg_quantile_diff_traces=torch.stack(avg_quantile_diff_traces, dim=0),
+        wasserstein_distance_traces=torch.stack(wasserstein_distance_traces, dim=0),
         sample_counter=sample_counter,
         seed=seed,
     )
