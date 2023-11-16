@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 from numpy.typing import NDArray
+from scipy.stats import wasserstein_distance
 from torch import Tensor
 
 
@@ -446,6 +447,49 @@ def get_spearman_corrcoef(a: Tensor, b: Tensor) -> Tensor:
     corrcoef = torch.cosine_similarity(a_centered, b_centered, dim=-1)
 
     return corrcoef
+
+
+def get_wasserstein_distance(a: Tensor, b: Tensor) -> Tensor:
+    """Get the first Wasserstein distance between samples from two distributions.
+
+    The Wasserstein distance is the minimum amount of distribution weight that must
+    be moved, multiplied by the distance it has to be moved to transform `a`
+    into `b`.
+
+    Parameters
+    ----------
+    a: Tensor, shape=(B?, N)
+        Samples from distribution A.
+    b: Tensor, shape=(B?, N)
+        Samples from distribution B.
+
+    Returns
+    -------
+    distance: Tensor, shape=(B?,)
+        Wasserstein distance between samples A and B.
+    """
+    squeeze = a.ndim == 1
+    a = torch.atleast_2d(a)
+    b = torch.atleast_2d(b)
+
+    # Find min and max across A and B to normalize values
+    lb = torch.minimum(a.min(dim=-1).values, b.min(dim=-1).values)[:, None]
+    ub = torch.maximum(a.max(dim=-1).values, b.max(dim=-1).values)[:, None]
+    a_norm = (a - lb) / (ub - lb + 1e-6)
+    b_norm = (b - lb) / (ub - lb + 1e-6)
+
+    distance = torch.tensor(
+        data=[
+            wasserstein_distance(ai.cpu(), bi.cpu()) for ai, bi in zip(a_norm, b_norm)
+        ],
+        device=a.device,
+        dtype=a.dtype,
+    )
+
+    if squeeze:
+        distance = distance.squeeze(0)
+
+    return distance
 
 
 def one_hot_encode(
