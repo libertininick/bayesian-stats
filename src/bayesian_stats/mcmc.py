@@ -8,6 +8,7 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 from functools import partial
+from itertools import accumulate, chain
 from typing import Callable, Iterable, NamedTuple, ParamSpec
 
 import pandas as pd
@@ -190,6 +191,59 @@ class MCMCResult:
         avg_quantile_diff: Tensor, shape=(num_iter,)
         """
         return self.wasserstein_distance_traces[:, self.parameters.index(parameter)]
+
+
+class ParameterSamples:
+    """..."""
+
+    def __init__(
+        self,
+        parameter_bounds: dict[str, Bounds],
+        parameter_shapes: dict[str, torch.Size | tuple[int, ...]],
+        num_samples: int,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = torch.float32,
+        seed: int | None = None,
+    ) -> None:
+        if param_diff := parameter_bounds.keys() ^ parameter_shapes.keys():
+            raise ValueError(
+                f"Parameter names in bounds and shapes must match; {param_diff}"
+            )
+
+        self.shapes = {
+            param: torch.Size(shape) for param, shape in parameter_shapes.items()
+        }
+
+        num_cumulative_params = list(
+            accumulate(v.numel() for v in self.shapes.values())
+        )
+        self.num_parameters = num_cumulative_params[-1]
+
+        self.slices = {
+            param: slice(st, stop)
+            for param, st, stop in zip(
+                self.shapes, [0] + num_cumulative_params[:-1], num_cumulative_params
+            )
+        }
+
+        self.num_samples = num_samples
+        self.samples = initialize_samples(
+            bounds=chain.from_iterable(
+                [parameter_bounds[param]] * shape.numel()
+                for param, shape in self.shapes.items()
+            ),
+            num_samples=num_samples,
+            device=device,
+            dtype=dtype,
+            seed=seed,
+        )
+
+    @property
+    def sample_views(self) -> dict[str, torch.Tensor]:
+        return {
+            param: self.samples[:, self.slices[param]].view(self.num_samples, *shape)
+            for param, shape in self.shapes.items()
+        }
 
 
 def get_proposal_distribution(samples: Tensor) -> dist.Normal:
