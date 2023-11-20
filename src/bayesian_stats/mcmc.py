@@ -204,8 +204,8 @@ class ParameterSamples(Mapping):
         """Get a normal proposal distribution centered at each parameter sample \
         with scale equal to the standard deviation of each parameter's samples.
 
-        As the sampling distribution of each parameter evolves, the standard 
-        deviation may shrink, thus annealing the sample movement from iteration 
+        As the sampling distribution of each parameter evolves, the standard
+        deviation may shrink, thus annealing the sample movement from iteration
         to iteration.
 
         Returns
@@ -393,11 +393,11 @@ def run_mcmc(
     parameter_samples: ParameterSamples
         Samples of latent model parameters.
     likelihood_func: Callable[..., Tensor]
-        Function that takes parameter samples as Tensors and returns a single 
+        Function that takes parameter samples as Tensors and returns a single
         Tensor for the joint log likelihood.
     prior_func: Callable[..., Tensor] | None, optional
-        Function w/ same parameter signature as `likelihood_func`, that takes 
-        parameter samples as Tensors and returns a single Tensor for the joint 
+        Function w/ same parameter signature as `likelihood_func`, that takes
+        parameter samples as Tensors and returns a single Tensor for the joint
         prior log probability.
         (default = None)
     max_iter: int, optional
