@@ -1,8 +1,8 @@
 """Markov chain Monte Carlo implementation.
 
-This is a parallel MCMC sampler that evolves a population of `N` samples over `M`
-iterations, so at the end of the iterations you have `N` samples approximating
-the posterior distribution.
+This is a parallel MCMC sampler that evolves a population of `S` samples
+over `N` iterations, so at the end of the iterations you have `S` samples
+approximating the posterior distribution.
 """
 import math
 from collections.abc import KeysView, Mapping
@@ -16,10 +16,7 @@ import torch
 from scipy.stats import qmc
 from torch import Tensor
 
-from bayesian_stats.utils import (
-    get_spearman_corrcoef,
-    get_wasserstein_distance,
-)
+from bayesian_stats.utils import get_spearman_corrcoef, get_wasserstein_distance
 
 
 P = ParamSpec("P")
@@ -81,10 +78,16 @@ class ParameterSamples(Mapping):
             2D matrix of samples from each parameter concatenated together.
         """
         if diff := bounds.keys() ^ shapes.keys():
-            raise ValueError(f"Parameter names in bounds and shapes must match; {diff}")
+            raise ValueError(
+                f"Parameter names in bounds and shapes must match; {diff}"
+            )
 
-        self.bounds = {param: Bounds(*bounds) for param, bounds in bounds.items()}
-        self.shapes = {param: torch.Size(shape) for param, shape in shapes.items()}
+        self.bounds = {
+            param: Bounds(*bounds) for param, bounds in bounds.items()
+        }
+        self.shapes = {
+            param: torch.Size(shape) for param, shape in shapes.items()
+        }
         self.sample_matrix = sample_matrix
         self.num_samples: int = sample_matrix.shape[0]
 
@@ -191,11 +194,11 @@ class ParameterSamples(Mapping):
         Parameters
         ----------
         likelihood_func: Callable[..., Tensor] | None
-            Function that takes parameter samples as Tensors and returns a single
-            Tensor for the joint log likelihood.
+            Function that takes parameter samples as Tensors and returns
+            a single Tensor for the joint log likelihood.
         prior_func: Callable[..., Tensor] | None
-            Function that takes parameter samples as Tensors and returns a single
-            Tensor for the joint prior log probability.
+            Function that takes parameter samples as Tensors and returns
+            a single Tensor for the joint prior log probability.
 
         Returns
         -------
@@ -209,8 +212,9 @@ class ParameterSamples(Mapping):
         return log_prob
 
     def proposal_distribution(self) -> dist.Normal:
-        """Get a normal proposal distribution centered at each parameter sample \
-        with scale equal to the standard deviation of each parameter's samples.
+        """Get a normal proposal distribution centered at each parameter \
+            sample with scale equal to the standard deviation of each \
+            parameter's samples.
 
         As the sampling distribution of each parameter evolves, the standard
         deviation may shrink, thus annealing the sample movement from iteration
@@ -225,7 +229,9 @@ class ParameterSamples(Mapping):
         proposal_scales = self.sample_matrix.std(dim=0, keepdim=True)
 
         # Build normal proposal distribution centered at each sample
-        proposal_dist = dist.Normal(loc=self.sample_matrix, scale=proposal_scales)
+        proposal_dist = dist.Normal(
+            loc=self.sample_matrix, scale=proposal_scales
+        )
 
         return proposal_dist
 
@@ -291,8 +297,8 @@ class MCMCResult:
     map_values: dict[str, Tensor]
         Maximum a posteriori parameter values observed during sampling.
     correlation_traces: dict[str, Tensor]
-        Trace of the Spearman Rank Correlation between current sample distribution
-        and the initial sample distribution for each parameter.
+        Trace of the Spearman Rank Correlation between current sample
+        distribution and the initial sample distribution for each parameter.
     wasserstein_distance_traces: dict[str, Tensor]
         Trace of the Wasserstein distance between split A and B of the sample
         distributions for each parameter.
@@ -311,7 +317,10 @@ class MCMCResult:
     def get_posterior_summary(self) -> pd.DataFrame:
         """Get a summary of posterior parameter samples."""
         columns = []
-        for param, numel in self.parameter_samples.num_parameter_elements.items():
+        for (
+            param,
+            numel,
+        ) in self.parameter_samples.num_parameter_elements.items():
             if numel > 1:
                 for i in range(numel):
                     columns.append(f"{param}[{i}]")
@@ -337,7 +346,8 @@ def initialize_samples(
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
 ) -> Tensor:
-    """Randomly initialize samples for each parameter using scrambled Sobol sequences.
+    """Randomly initialize samples for each parameter using scrambled \
+        Sobol sequences.
 
     Parameters
     ----------
@@ -412,13 +422,14 @@ def run_mcmc(
         Maximum number of iterations to evolve samples for.
         (default = 1_000)
     max_corr: float, optional
-        Maximum correlation between current sample distribution and initial sample \
-        distribution for any parameter to allow early stopping of MCMC iterations.
+        Maximum correlation between current sample distribution and initial
+        sample distribution for any parameter to allow early stopping of
+        MCMC iterations.
         (default = 5%)
     max_split_distance: float, optional
-        If the max Wasser the sampling distribution from \
-        one iteration to the next is less than this value for all parameters, and
-        the `max_corr` constraint has been satisfied, MCMC iterations will be stopped.
+        If the max Wasser the sampling distribution from one iteration to
+        the next is less than this value for all parameters, and the `max_corr`
+        constraint has been satisfied, MCMC iterations will be stopped.
         (default = 0.005)
     device: torch.device | None, optional
         Compute device for samples.
@@ -485,10 +496,12 @@ def run_mcmc(
 
         # Calculation correlation between initial samples and current samples
         correlation_traces.append(
-            get_spearman_corrcoef(init_samples.sample_matrix.T, samples.sample_matrix.T)
+            get_spearman_corrcoef(
+                init_samples.sample_matrix.T, samples.sample_matrix.T
+            )
         )
 
-        # Calculate Wasserstein distance between split A and B for each parameter
+        # Calc Wasserstein distance between split A and B for each parameter
         wasserstein_distance_traces.append(
             get_wasserstein_distance(
                 a=torch.gather(samples.sample_matrix, 0, split_a_idxs).T,
@@ -505,17 +518,20 @@ def run_mcmc(
 
         if verbose:
             # Print progress bar
-            n_done = int((i + 1) / max_iter * 100)
+            n_done = int((i + 1) / max_iter * 50)
             print(
-                f"""{"█" * n_done}{" " * (100 - n_done)} | {(i+1):>6,}/{max_iter:,}"""
-                f" | {max_corr_i:>5.1%} | {max_splt_dist_i:>7.5f}",
+                f"""{"█" * n_done}{" " * (50 - n_done)} """
+                f"| {(i+1):>6,}/{max_iter:,} "
+                f"| {max_corr_i:>5.1%} | {max_splt_dist_i:>7.5f}",
                 flush=True,
                 end="\r",
             )
 
     # Collate results
     correlation_traces = torch.stack(correlation_traces, dim=0)
-    wasserstein_distance_traces = torch.stack(wasserstein_distance_traces, dim=0)
+    wasserstein_distance_traces = torch.stack(
+        wasserstein_distance_traces, dim=0
+    )
     result = MCMCResult(
         parameter_samples=samples,
         map_values={
@@ -527,7 +543,9 @@ def run_mcmc(
             for param, sl in samples.slices.items()
         },
         wasserstein_distance_traces={
-            param: wasserstein_distance_traces[:, sl].view(-1, *samples.shapes[param])
+            param: wasserstein_distance_traces[:, sl].view(
+                -1, *samples.shapes[param]
+            )
             for param, sl in samples.slices.items()
         },
     )

@@ -107,7 +107,7 @@ def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
     values = torch.atleast_1d(values)
     if samples.shape[:-1] != values.shape[:-1]:
         raise ValueError(
-            "The shape of `samples` and `values` must match on all but last dimension;"
+            "Shape of `samples` & `values` must match on all but last dim"
             f" got {samples.shape[:-1]} and {values.shape[:-1]}"
         )
     return (
@@ -325,7 +325,7 @@ def get_quantile_diffs(
     samples_b: Tensor,
     num_quantiles: int,
 ) -> Tensor:
-    """Get the absolute difference between the quantiles of two sample distributions.
+    """Get the ABS difference between quantiles of two sample distributions.
 
     For example, if the 5% quantile value on A is the 8% value on B, there is a 3%
     difference for A's 5% quantile.
@@ -411,7 +411,7 @@ def get_rolling_windows(
 
 
 def get_spearman_corrcoef(a: Tensor, b: Tensor) -> Tensor:
-    """Calculate Spearman's rank correlation coefficient between two sets of values.
+    """Get Spearman's rank correlation coefficient between two sets of values.
 
     NOTE: Values are assumed to be in the last dimension of each tensor.
 
@@ -437,11 +437,12 @@ def get_spearman_corrcoef(a: Tensor, b: Tensor) -> Tensor:
     tensor(-0.0131)
 
     Batched
+    >>> torch.manual_seed(1234)
     >>> a = torch.randn(2, 3, 100)
     >>> b = torch.randn(2, 3, 100)
     >>> get_spearman_corrcoef(a, b)
-    tensor([[ 0.1132, -0.0575, -0.1038],
-            [ 0.0032, -0.0042,  0.0391]])
+    tensor([[-0.1477, -0.0310, -0.1072],
+            [-0.0343,  0.0770, -0.1722]])
     """
     # Rank and center values
     a_ranked = rank(a, dim=-1, dtype=torch.float32)
@@ -456,11 +457,11 @@ def get_spearman_corrcoef(a: Tensor, b: Tensor) -> Tensor:
 
 
 def get_wasserstein_distance(a: Tensor, b: Tensor) -> Tensor:
-    """Get the first Wasserstein distance between samples from two distributions.
+    """Get first Wasserstein distance between samples from two distributions.
 
-    The Wasserstein distance is the minimum amount of distribution weight that must
-    be moved, multiplied by the distance it has to be moved to transform `a`
-    into `b`.
+    The Wasserstein distance is the minimum amount of distribution weight
+    that must be moved, multiplied by the distance it has to be moved to
+    transform `a` into `b`.
 
     Parameters
     ----------
