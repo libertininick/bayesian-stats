@@ -3,7 +3,10 @@ import pytest
 import torch
 from scipy.stats import spearmanr
 
-from bayesian_stats.utils import get_spearman_corrcoef, get_wasserstein_distance
+from bayesian_stats.utils import (
+    get_spearman_corrcoef,
+    get_wasserstein_distance,
+)
 
 
 @pytest.mark.parametrize("shape", [(100,), (2, 100), (2, 3, 100)])
@@ -28,7 +31,7 @@ def test_get_spearman_corrcoef_values(seed: int) -> None:
 
 
 def test_get_wasserstein_distance_1d() -> None:
-    """Test that calculation on 1D tensors works and result shape is correct."""
+    """Test calculation on 1D tensors works and result shape is correct."""
     a = torch.randn(100)
     b = torch.randn(100)
     result = get_wasserstein_distance(a, b)
@@ -37,7 +40,7 @@ def test_get_wasserstein_distance_1d() -> None:
 
 @pytest.mark.parametrize("batch", [1, 2, 3])
 def test_get_wasserstein_distance_2d(batch: int) -> None:
-    """Test that calculation on 2D tensors works and result shape is correct."""
+    """Test calculation on 2D tensors works and result shape is correct."""
     a = torch.randn(batch, 100)
     b = torch.randn(batch, 100)
     result = get_wasserstein_distance(a, b)
@@ -50,5 +53,6 @@ def test_get_wasserstein_distance_normalized(scale: float) -> None:
     a = torch.randn(100)
     b = torch.randn(100)
     assert torch.allclose(
-        get_wasserstein_distance(a, b), get_wasserstein_distance(a * scale, b * scale)
+        get_wasserstein_distance(a, b),
+        get_wasserstein_distance(a * scale, b * scale),
     )

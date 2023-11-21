@@ -26,7 +26,8 @@ __all__ = [
 
 
 def get_auto_corr(
-    x: NDArray[Any], lags: int | Iterable[int] | NDArray[np.int64] | None = None
+    x: NDArray[Any],
+    lags: int | Iterable[int] | NDArray[np.int64] | None = None,
 ) -> NDArray[np.float64]:
     """Get auto-correlation of a vector for specific lags.
 
@@ -73,7 +74,10 @@ def get_auto_corr(
         raise ValueError(f"Max lag must < {n - 1}")
 
     return np.array(
-        [1.0 if lag == 0 else np.corrcoef(x[lag:], x[:-lag])[0, 1] for lag in lags]
+        [
+            1.0 if lag == 0 else np.corrcoef(x[lag:], x[:-lag])[0, 1]
+            for lag in lags
+        ]
     )
 
 
@@ -106,7 +110,9 @@ def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
             "The shape of `samples` and `values` must match on all but last dimension;"
             f" got {samples.shape[:-1]} and {values.shape[:-1]}"
         )
-    return (samples[..., None] <= values[..., None, :]).to(torch.float).mean(-2)
+    return (
+        (samples[..., None] <= values[..., None, :]).to(torch.float).mean(-2)
+    )
 
 
 def get_effective_sample_size(
@@ -480,7 +486,8 @@ def get_wasserstein_distance(a: Tensor, b: Tensor) -> Tensor:
 
     distance = torch.tensor(
         data=[
-            wasserstein_distance(ai.cpu(), bi.cpu()) for ai, bi in zip(a_norm, b_norm)
+            wasserstein_distance(ai.cpu(), bi.cpu())
+            for ai, bi in zip(a_norm, b_norm)
         ],
         device=a.device,
         dtype=a.dtype,
@@ -523,7 +530,8 @@ def one_hot_encode(
 
     ohe = x.reshape(-1, 1)[..., None] == levels.reshape(1, -1)[None]
     df_ohe = pd.DataFrame(
-        data=ohe.all(1).astype(float), columns=[f"{var_name}_{lvl}" for lvl in levels]
+        data=ohe.all(1).astype(float),
+        columns=[f"{var_name}_{lvl}" for lvl in levels],
     )
     return df_ohe
 
