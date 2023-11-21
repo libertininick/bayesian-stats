@@ -135,9 +135,9 @@ class ParameterSamples(Mapping):
             self.num_samples, *self.shapes[key]
         )
 
-    def __iter__(self) -> Iterable[Tensor]:
+    def __iter__(self) -> Iterable[tuple[str, Tensor]]:
         """Iterate across views of parameter samples."""
-        return (self.__getitem__(k) for k in self.keys())
+        return ((k, self[k]) for k in self.keys())
 
     def __len__(self) -> int:
         """Get number of parameters."""
@@ -169,9 +169,17 @@ class ParameterSamples(Mapping):
             sample_matrix=proposed_sample_matrix,
         )
 
+    def items(self) -> Iterable[tuple[str, Tensor]]:
+        """Return an iter over parameter names and samples."""
+        return iter(self)
+
     def keys(self) -> KeysView[str]:
         """Get parameter names."""
         return self.bounds.keys()
+
+    def values(self) -> Iterable[Tensor]:
+        """Return an iter over parameter samples."""
+        return (self[k] for k in self.keys())
 
     def log_prob(
         self,
