@@ -1,19 +1,18 @@
 """Test for MCMC module."""
+import math
 from functools import partial
 
 import pyro.distributions as dist
 import pytest
 import scipy.stats as stats
 import torch
-from hypothesis import given, seed, settings, strategies as st, target, Verbosity
+from hypothesis import Verbosity, given, seed, settings
+from hypothesis import strategies as st
+from hypothesis import target
+from pytest_check import check
 from torch import Tensor
 
-from bayesian_stats.mcmc import (
-    Bounds,
-    get_proposal_distribution,
-    initialize_samples,
-    run_mcmc,
-)
+from bayesian_stats.mcmc import Bounds, ParameterSamples, initialize_samples, run_mcmc
 from bayesian_stats.utils import get_quantile_diffs
 
 
@@ -26,27 +25,43 @@ NUM_PARAMETERS = 3
 @pytest.fixture(scope="module")
 def parameter_bounds() -> dict[str, Bounds]:
     """Get a dictionary of parameter bounds test fixture."""
-    return dict(pi=Bounds(0.0, 1.0), mu=Bounds(-5.0, 2.0), sigma=Bounds(1e-6, 3.0))
-
-
-@pytest.fixture(scope="module")
-def samples(parameter_bounds: dict[str, Bounds]) -> Tensor:
-    """Get parameter samples test fixture."""
-    return initialize_samples(
-        parameter_bounds.values(), num_samples=NUM_SAMPLES, seed=456
+    return dict(
+        pi=Bounds(0.0, 1.0), mu=Bounds(-5.0, 2.0), sigma=Bounds(1e-6, 3.0)
     )
 
 
 @pytest.fixture(scope="module")
-def proposal_dist(samples: Tensor) -> dist.Normal:
+def parameter_samples(parameter_bounds: dict[str, Bounds]) -> ParameterSamples:
+    """Get parameter samples test fixture."""
+    return ParameterSamples.random_initialization(
+        bounds=parameter_bounds,
+        shapes={k: (1,) for k in parameter_bounds},
+        num_samples=NUM_SAMPLES,
+        seed=456,
+    )
+
+
+@pytest.fixture(scope="module")
+def beta_binomial_parameter_samples() -> ParameterSamples:
+    """Get beta-binomial parameter samples test fixture."""
+    return ParameterSamples.random_initialization(
+        bounds=dict(p=(0.0, 1.0)),
+        shapes=dict(p=(1,)),
+        num_samples=2**13,
+        seed=123456,
+    )
+
+
+@pytest.fixture(scope="module")
+def proposal_distribution(parameter_samples: ParameterSamples) -> dist.Normal:
     """Get a proposal distribution text fixture."""
-    return get_proposal_distribution(samples)
+    return parameter_samples.proposal_distribution()
 
 
 # Tests
 @pytest.mark.parametrize("num_samples", [3, 5, 6, 7])
 def test_initialize_samples_raise_on_bad_num_samples(num_samples: int) -> None:
-    """Test that a `num_samples` that isn't a power of 2 raises an exception."""
+    """Test `num_samples` that isn't a power of 2 raises an exception."""
     with pytest.raises(ValueError):
         initialize_samples([(0, 1)], num_samples)
 
@@ -67,14 +82,46 @@ def test_initialize_samples_seeded() -> None:
     assert torch.allclose(expected, samples)
 
 
-def test_proposal_distribution_shape(proposal_dist: dist.Normal) -> None:
+@pytest.mark.parametrize(
+    "a_shape",
+    [(1,), (10,), (2, 2), (1, 2), (2, 1), (10, 2, 1, 2), (3, 2, 1), (5, 5)],
+)
+@pytest.mark.parametrize(
+    "b_shape",
+    [(1,), (10,), (2, 2), (1, 2), (2, 1), (10, 2, 1, 2), (3, 2, 1), (5, 5)],
+)
+def test_parameter_samples_shapes(
+    a_shape: tuple[int, ...], b_shape: tuple[int, ...]
+) -> None:
+    """Test that multi-dimension parameters produce correct shapes."""
+    num_samples = 8
+    psamples = ParameterSamples.random_initialization(
+        bounds=dict(a=(0.0, 1.0), b=(0.0, 1.0)),
+        shapes=dict(a=a_shape, b=b_shape),
+        num_samples=num_samples,
+    )
+
+    # Check that the flattened parameter matrix has correct # columns
+    expected_num_cols = math.prod(a_shape) + math.prod(b_shape)
+    check.equal(psamples.sample_matrix.shape[-1], expected_num_cols)
+
+    # Check that the samples for each parameter have correct shape
+    check.equal(psamples["a"].shape, (num_samples, *a_shape))
+    check.equal(psamples["b"].shape, (num_samples, *b_shape))
+
+
+def test_proposal_distribution_shape(
+    proposal_distribution: dist.Normal,
+) -> None:
     """Test that proposal distribution has correct shape."""
-    assert proposal_dist.shape() == (NUM_SAMPLES, NUM_PARAMETERS)
+    assert proposal_distribution.shape() == (NUM_SAMPLES, NUM_PARAMETERS)
 
 
-def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
+def test_proposal_distribution_sample_shape(
+    proposal_distribution: dist.Normal,
+) -> None:
     """Test a sample from the proposal distribution is correct shape."""
-    proposals = proposal_dist.sample()
+    proposals = proposal_distribution.sample()
     assert proposals.shape == (NUM_SAMPLES, NUM_PARAMETERS)
 
 
@@ -86,38 +133,45 @@ def test_proposal_distribution_sample_shape(proposal_dist: dist.Normal) -> None:
     pos=st.integers(min_value=1, max_value=200),
     neg=st.integers(min_value=1, max_value=200),
 )
-@settings(max_examples=100, deadline=None, verbosity=Verbosity.verbose)
-def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
-    """Test that MCMC samples converge to analytic solution for beta-binomial."""
+@settings(max_examples=1_000, deadline=None, verbosity=Verbosity.verbose)
+def test_mcmc_beta_binomial(
+    a: int,
+    b: int,
+    pos: int,
+    neg: int,
+    beta_binomial_parameter_samples: ParameterSamples,
+) -> None:
+    """Test MCMC samples converge to analytic solution for beta-binomial."""
     n = pos + neg
 
-    def prior_fun(a: float, b: float, p: Tensor) -> Tensor:
+    def prior_func(a: float, b: float, p: Tensor) -> Tensor:
         return dist.Beta(a, b).log_prob(p)
 
-    def likelihood_fun(p: Tensor, n: int, k: int) -> Tensor:
+    def likelihood_func(p: Tensor, n: int, k: int) -> Tensor:
         return dist.Binomial(total_count=n, probs=p).log_prob(torch.tensor(k))
 
-    num_samples = 2**13
-
+    # Run MCMC sampling
     result = run_mcmc(
-        parameter_bounds=dict(p=(0.0, 1.0)),
-        prior_fun=partial(prior_fun, a=a, b=b),
-        likelihood_fun=partial(likelihood_fun, n=n, k=pos),
-        num_samples=num_samples,
+        beta_binomial_parameter_samples,
+        prior_func=partial(prior_func, a=a, b=b),
+        likelihood_func=partial(likelihood_func, n=n, k=pos),
         max_iter=200,
         seed=1234,
         verbose=False,
     )
 
-    posterior = stats.beta(a=a + pos, b=b + neg)
-
+    # Sample from analytic posterior
     analytic_samples = torch.from_numpy(
-        posterior.rvs(size=num_samples, random_state=1234)
+        stats.beta(a=a + pos, b=b + neg).rvs(
+            size=beta_binomial_parameter_samples.num_samples, random_state=1234
+        )
     ).to(torch.float32)
 
-    qdiff_dist = (
+    # Check average quantile difference between MCMC samples and analytic
+    # samples is <= 2.5%
+    avg_quantile_diff = (
         get_quantile_diffs(
-            result.get_samples("p")[:, None],
+            result.parameter_samples["p"],
             analytic_samples[:, None],
             num_quantiles=100,
         )
@@ -125,5 +179,5 @@ def test_mcmc_beta_binomial(a: int, b: int, pos: int, neg: int) -> None:
         .item()
     )
 
-    target(qdiff_dist)
-    assert qdiff_dist <= 0.01
+    target(avg_quantile_diff)
+    assert avg_quantile_diff <= 0.025
