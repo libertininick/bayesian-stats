@@ -41,3 +41,62 @@ ipympl = "^0.9.3"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+
+[tool.bandit]
+targets = ["src"]
+exclude_dirs = [
+    "tests",
+    "build",
+]
+
+[tool.black]
+line-length = 79
+
+[tool.coverage.run]
+branch = true
+data_file = "build/.coverage"
+source = [
+    "src",
+    "tests",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__"
+]
+fail_under = 90
+precision = 1
+show_missing = true
+skip_covered = true
+skip_empty = true
+
+[tool.isort]
+known_first_party = "bayesian_stats"
+lines_after_imports = 2
+profile = "black"
+skip_gitignore = true
+src_paths = ["src"]
+
+[tool.mypy]
+cache_dir = "./build/mypy"
+disallow_untyped_defs = true
+ignore_missing_imports = true
+plugins = "numpy.typing.mypy_plugin"
+pretty = true
+show_column_numbers = true
+show_error_context = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+addopts = "rf --doctest-modules --strict-markers"
+cache_dir = "./build/pytest"
+console_output_style = "progress"
+markers = [
+    "slow"
+]
+minversion = "6.0"
+testpaths = [
+    "src",
+    "tests",
+]
