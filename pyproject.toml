@@ -89,7 +89,7 @@ show_error_context = true
 warn_unreachable = true
 
 [tool.pytest.ini_options]
-addopts = "rf --doctest-modules --strict-markers"
+addopts = "-rf --doctest-modules --strict-markers"
 cache_dir = "./build/pytest"
 console_output_style = "progress"
 markers = [
