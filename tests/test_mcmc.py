@@ -12,8 +12,8 @@ from hypothesis import target
 from pytest_check import check
 from torch import Tensor
 
-from bayesian_stats.mcmc import Bounds, ParameterSamples, initialize_samples, run_mcmc
-from bayesian_stats.utils import get_quantile_diffs
+from bayesian_stats.mcmc import ParameterSamples, initialize_samples, run_mcmc
+from bayesian_stats.utils import Bounds, get_quantile_diffs
 
 
 # Test constants

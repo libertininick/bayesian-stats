@@ -8,7 +8,7 @@ import math
 from collections.abc import KeysView, Mapping
 from dataclasses import dataclass
 from itertools import accumulate, chain
-from typing import Callable, Iterable, NamedTuple, ParamSpec
+from typing import Callable, Iterable, ParamSpec
 
 import pandas as pd
 import pyro.distributions as dist
@@ -16,25 +16,14 @@ import torch
 from scipy.stats import qmc
 from torch import Tensor
 
-from bayesian_stats.utils import get_spearman_corrcoef, get_wasserstein_distance
+from bayesian_stats.utils import (
+    Bounds,
+    get_spearman_corrcoef,
+    get_wasserstein_distance,
+)
 
 
 P = ParamSpec("P")
-
-
-class Bounds(NamedTuple):
-    """Upper and lower bounds for a model parameter.
-
-    Attributes
-    ----------
-    lower: float
-        Lower bound.
-    upper: float
-        Upper bound.
-    """
-
-    lower: float
-    upper: float
 
 
 class ParameterSamples(Mapping):

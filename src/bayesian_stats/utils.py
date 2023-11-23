@@ -1,6 +1,6 @@
 """Utility classes and functions."""
 
-from typing import Any, Iterable
+from typing import Any, Iterable, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -11,6 +11,7 @@ from torch import Tensor
 
 
 __all__ = [
+    "Bounds",
     "get_auto_corr",
     "get_cumulative_prob",
     "get_effective_sample_size",
@@ -23,6 +24,26 @@ __all__ = [
     "one_hot_encode",
     "rank",
 ]
+
+
+class Bounds(NamedTuple):
+    """Upper and lower bounds for a parameter.
+
+    Attributes
+    ----------
+    lower: float
+        Lower bound.
+    upper: float
+        Upper bound.
+    """
+
+    lower: float
+    upper: float
+
+    @property
+    def range(self) -> float:
+        """Get range from lower to upper bound."""
+        return self.upper - self.lower
 
 
 def get_auto_corr(
@@ -498,6 +519,15 @@ def get_wasserstein_distance(a: Tensor, b: Tensor) -> Tensor:
         distance = distance.squeeze(0)
 
     return distance
+
+
+def iqr(
+    x: Tensor, dim: int | None = None, q1: float = 0.25, q3: float = 0.75
+) -> Tensor:
+    """Calculate interquartile range (IQR)."""
+    q1 = torch.quantile(x, q=q1, dim=dim)
+    q3 = torch.quantile(x, q=q3, dim=dim)
+    return q3 - q1
 
 
 def one_hot_encode(
