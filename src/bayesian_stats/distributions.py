@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Callable, NamedTuple
 
 import torch
-from pyro.distributions import TorchDistribution
+import pyro.distributions as dist
 from torch.distributions import constraints
 from torch import Tensor
 
@@ -119,8 +119,8 @@ class Kernel(StrEnum):
     GAUSSIAN = "gaussian"
 
     @property
-    def func(self) -> Callable[[Tensor], Tensor]:
-        """Get kernel function."""
+    def log_func(self) -> Callable[[Tensor], Tensor]:
+        """Get (log) kernel function."""
         match self:
             case self.GAUSSIAN:
                 return gaussian_kernel
@@ -128,7 +128,7 @@ class Kernel(StrEnum):
                 raise NotImplementedError
 
 
-class KDEDistribution(TorchDistribution):
+class KDEDistribution(dist.TorchDistribution):
     """Kernel density estimated (KDE) distribution from sample data."""
 
     arg_constraints = {}
@@ -146,7 +146,7 @@ class KDEDistribution(TorchDistribution):
         event_shape: torch.Size | None = None,
         validate_args: bool | None = None,
     ) -> None:
-        self.bounds = bounds
+        self.bounds = Bounds(*bounds)
 
         # Get shape properties of distribution
         (
@@ -169,48 +169,93 @@ class KDEDistribution(TorchDistribution):
             validate_args=validate_args,
         )
 
-        # Flatten samples
-        self._samples = samples.reshape((-1, *self.exsamples_shape))
+        # Flatten & sort sample values
+        sorted_samples: Tensor = torch.sort(
+            samples.reshape((-1, *self.exsamples_shape)), dim=0
+        ).values
 
-        # Move sample dim to inner most dim (for distance calculations)
-        dims = range(self._samples.ndim)
-        self._samples = self._samples.permute(*dims[1:], 0).contiguous()
+        # Move sample dim to inner most dim (for torch.searchsorted)
+        dims = range(sorted_samples.ndim)
+        self._samples = sorted_samples.permute(*dims[1:], 0).contiguous()
 
-        # Set kernel and bandwidth for density estimation
-        self.kernel = kernel
+        # Set bandwidth for density estimation
         if bandwidth is None:
             # Use rule of thumb for bandwidth
             s_std = self._samples.std(dim=-1)
             s_iqr = iqr(self._samples, dim=-1) / 1.34
             d = self.event_shape.numel()
-            self.bandwidth: Tensor = (
+            self.bandwidth = (
                 0.9
                 * torch.minimum(s_std, s_iqr)
                 * self.num_samples ** (-1.0 / (d + 4))
-            ).to(self._samples)
+            ).to(samples)
         else:
-            self.bandwidth = torch.tensor(bandwidth).to(self._samples)
+            self.bandwidth = torch.tensor(
+                bandwidth, dtype=samples.dtype, device=samples.device
+            )
+
+        # Set kernel function for density estimation
+        self.kernel = kernel
+
+        # Append bounds for density estimation
+        lower_bound = torch.full(
+            size=self.exsamples_shape,
+            fill_value=self.bounds.lower,
+            dtype=samples.dtype,
+            device=samples.device,
+        )
+        upper_bound = torch.full(
+            size=self.exsamples_shape,
+            fill_value=self.bounds.upper,
+            dtype=samples.dtype,
+            device=samples.device,
+        )
+        sorted_samples = torch.cat(
+            (
+                lower_bound[None, ...],
+                sorted_samples,
+                upper_bound[None, ...],
+            ),
+            dim=0,
+        )
+
+        # Estimate log-density for each sample
+        diffs = sorted_samples[..., None] - self._samples[None, ...]
+        diffs = diffs / (self.bandwidth[None, ..., None])
+        self._density = torch.logsumexp(self.kernel.log_func(diffs), dim=-1)
+        self._density = self._density - torch.log(
+            self.num_samples * self.bandwidth[None, ...]
+        )
+
+        # Append bounds to samples
+        self._samples = torch.cat(
+            (
+                lower_bound[..., None],
+                self._samples,
+                upper_bound[..., None],
+            ),
+            dim=-1,
+        )
 
     def sample(self, sample_shape: torch.Size = torch.Size([])) -> Tensor:
         """Get `sample_shape` randomly selected samples from distribution."""
+        sample_shape = torch.Size(sample_shape)
         # Draw random sample indexes
         ridxs = torch.randint(low=0, high=self.num_samples, size=sample_shape)
-        samples = self._samples[..., ridxs]
+        sample_pool = self._samples[..., 1:-1]
+        samples = sample_pool[..., ridxs]
 
         # Permute so sampling dimensions are first (outermost) dims
-        dims = range(samples.ndim)
+        dims = list(range(samples.ndim))
         samples = samples.permute(
-            *dims[-len(sample_shape) :], dims[: -len(sample_shape)]
+            *dims[-len(sample_shape) :], *dims[: -len(sample_shape)]
         ).contiguous()
 
         return samples
 
     def log_prob(self, value: Tensor) -> Tensor:
         """Evaluate the log probability density of each event in a batch."""
-        diffs = value[..., None] - self._samples[None, ...]
-        density = self.kernel.func(diffs / self.bandwidth).sum(-1)
-        density = density / (self.num_samples * self.bandwidth)
-        return torch.log(density)
+        pass
 
     @property
     def support(self) -> constraints.Constraint:
@@ -220,4 +265,4 @@ class KDEDistribution(TorchDistribution):
 
 def gaussian_kernel(x: Tensor) -> Tensor:
     """Apply Gaussian kernel to input."""
-    return 1 / (2 * torch.pi) ** 0.5 * torch.exp(-(x**2) / 2)
+    return dist.Normal(loc=0.0, scale=1.0).log_prob(x)
