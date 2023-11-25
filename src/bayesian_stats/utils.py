@@ -1,6 +1,6 @@
 """Utility classes and functions."""
-
-from typing import Any, Iterable, NamedTuple
+from string import ascii_uppercase
+from typing import Any, Iterable, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from torch import Tensor
 
 __all__ = [
     "Bounds",
+    "encode_shape",
     "get_auto_corr",
     "get_cumulative_prob",
     "get_effective_sample_size",
@@ -44,6 +45,51 @@ class Bounds(NamedTuple):
     def range(self) -> float:
         """Get range from lower to upper bound."""
         return self.upper - self.lower
+
+
+def encode_shape(
+    shape: torch.Size | tuple[int, ...],
+    *,
+    encoding_seq: str | Sequence[str] = ascii_uppercase,
+    sep: str = " ",
+) -> str:
+    """Assign letter to each dimension in a tensor shape.
+
+    Parameters
+    ----------
+    shape: torch.Size | tuple[int, ...]
+        Tensor shape to encode.
+    encoding_seq: str | Sequence[str], optional
+        Sequence of characters to use for encoding shape dimensions.
+        (default = ascii_uppercase)
+    sep: str, optional
+        Character to join encoded shape dimensions.
+        (default = " ")
+
+    Returns
+    -------
+    encoded_shape: str
+
+    Examples
+    --------
+    >>> from string import ascii_uppercase
+    >>> import torch
+
+    >>> input_tensor = torch.rand(10, 2, 5)
+    >>> encode_shape(input_tensor.shape)
+    'A B C'
+
+    >>> encode_shape(input_tensor.shape, encoding_seq=ascii_uppercase[::-1])
+    'Z Y X'
+
+    >>> encode_shape(
+    ...     input_tensor.shape,
+    ...     encoding_seq=("aa", "bb", "cc"),
+    ...     sep=",",
+    ... )
+    'aa,bb,cc'
+    """
+    return sep.join(encoding_seq[: len(shape)])
 
 
 def get_auto_corr(
