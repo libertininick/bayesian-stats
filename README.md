@@ -54,5 +54,10 @@ coverage erase \
     && coverage report
 ```
 
+To skip slow tests
+```bash
+coverage run -m pytest -m "not slow"
+```
+
 ## Authors
 - [@libertininick](https://github.com/libertininick)
