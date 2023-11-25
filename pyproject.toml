@@ -19,6 +19,7 @@ xarray = "^2023.6.0"
 pyro-ppl = "^1.8.6"
 torch = ">=2.0.0, !=2.0.1, !=2.1.0"
 python-dotenv = "^1.0.0"
+einops = "^0.7.0"
 
 
 [tool.poetry.group.dev.dependencies]

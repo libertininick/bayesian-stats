@@ -757,6 +757,17 @@ files = [
 ]
 
 [[package]]
+name = "einops"
+version = "0.7.0"
+description = "A new flavour of deep learning operations"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "einops-0.7.0-py3-none-any.whl", hash = "sha256:0f3096f26b914f465f6ff3c66f5478f9a5e380bb367ffc6493a68143fbbf1fd1"},
+    {file = "einops-0.7.0.tar.gz", hash = "sha256:b2b04ad6081a3b227080c9bf5e3ace7160357ff03043cd66cc5b2319eb7031d1"},
+]
+
+[[package]]
 name = "ensureconda"
 version = "1.4.3"
 description = "Lightweight bootstrapper for a conda executable"
@@ -3498,4 +3509,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "dc9c380e6190ddfce19e42ade45c751391ab0c4dd27500acbf7856cd6f26415c"
+content-hash = "99379195a026c4e499b64142d91cfd6447157d098943fb75716957c4274606fb"
