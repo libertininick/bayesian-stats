@@ -291,6 +291,7 @@ class KDEDistribution(dist.TorchDistribution):
         self.sample_density = self.samples.to(*args, **kwargs)
         self.lower_bound_density = self.lower_bound_density.to(*args, **kwargs)
         self.upper_bound_density = self.upper_bound_density.to(*args, **kwargs)
+        return self
 
     def _init_sample_density(
         self, samples: Tensor, kernel: Kernel, bandwidth: float | Tensor | None
