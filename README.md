@@ -38,10 +38,8 @@ poetry install --with dev,jupyter
 To format code to adhere to our style and run type checking run the following:
 
 ```bash
-black src/ tests/ \
-    && isort src/ tests/ \
-    && flake8 src/ tests/ --verbose \
-    && mypy src/
+ruff check . --fix
+mypy src/
 ```
 
 ## Running Tests

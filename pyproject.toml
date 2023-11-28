@@ -23,16 +23,13 @@ einops = "^0.7.0"
 
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.3.0"
 coverage = "^7.2.7"
-flake8 = "^6.0.0"
-isort = "^5.12.0"
 mypy = "^1.4.1"
 typeguard = "^4.0.0"
 pytest = "^7.4.0"
-flake8-docstrings = "^1.7.0"
 hypothesis = "^6.88.1"
 pytest-check = "^2.2.2"
+ruff = "^0.1.6"
 
 
 [tool.poetry.group.jupyter.dependencies]
@@ -44,16 +41,6 @@ ipympl = "^0.9.3"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-
-[tool.bandit]
-targets = ["src"]
-exclude_dirs = [
-    "tests",
-    "build",
-]
-
-[tool.black]
-line-length = 79
 
 [tool.coverage.run]
 branch = true
@@ -73,12 +60,6 @@ show_missing = true
 skip_covered = true
 skip_empty = true
 
-[tool.isort]
-known_first_party = "bayesian_stats"
-lines_after_imports = 2
-profile = "black"
-skip_gitignore = true
-src_paths = ["src"]
 
 [tool.mypy]
 cache_dir = "./build/mypy"
@@ -89,6 +70,7 @@ pretty = true
 show_column_numbers = true
 show_error_context = true
 warn_unreachable = true
+
 
 [tool.pytest.ini_options]
 addopts = "-rf --doctest-modules --strict-markers"
@@ -102,3 +84,44 @@ testpaths = [
     "src",
     "tests",
 ]
+
+
+[tool.ruff]
+cache-dir = "./build/ruff"
+line-length = 79  # set max line length 
+indent-width = 4
+target-version = "py311"  # python version of code
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint]
+pydocstyle = {convention = "numpy"}
+mccabe = {max-complexity = 10}
+select = [
+    "B",  # flake8-bugbear
+    "D",  # pydocstyle
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "S",  # flake8-bandit
+    "C4",  # flake8-comprehensions
+    "C9",  # max-complexity
+    "UP",  # pyupgrade
+    "ANN",  # flake8-annotations
+    "RUF",  # Ruff-specific rules
+    "SIM",  # flake8-simplify
+    "E501",   # `line-too-long` rule
+]
+ignore = [
+    "ANN002",  # Missing type annotation for `*args`
+    "ANN003",  # Missing type annotation for `**kwargs`
+    "ANN101",  # missing-type-self
+    "ANN102",  # missing-type-cls
+    "ANN401",  # disallow any-type
+]
+per-file-ignores = {"**/{tests}/*" = ["S101"]}  # ignore asserts in tests

@@ -1,12 +1,11 @@
 """Tests for utility classes and functions."""
 import pytest
 import torch
-from scipy.stats import spearmanr
-
 from bayesian_stats.utils import (
     get_spearman_corrcoef,
     get_wasserstein_distance,
 )
+from scipy.stats import spearmanr
 
 
 @pytest.mark.parametrize("shape", [(100,), (2, 100), (2, 3, 100)])

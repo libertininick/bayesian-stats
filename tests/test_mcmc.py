@@ -6,15 +6,12 @@ import pyro.distributions as dist
 import pytest
 import scipy.stats as stats
 import torch
-from hypothesis import Verbosity, given, seed, settings
-from hypothesis import strategies as st
-from hypothesis import target
-from pytest_check import check
-from torch import Tensor
-
 from bayesian_stats.mcmc import ParameterSamples, initialize_samples, run_mcmc
 from bayesian_stats.utils import Bounds, get_quantile_diffs
-
+from hypothesis import Verbosity, given, seed, settings, target
+from hypothesis import strategies as st
+from pytest_check import check
+from torch import Tensor
 
 # Test constants
 NUM_SAMPLES = 1_024
@@ -25,9 +22,11 @@ NUM_PARAMETERS = 3
 @pytest.fixture(scope="module")
 def parameter_bounds() -> dict[str, Bounds]:
     """Get a dictionary of parameter bounds test fixture."""
-    return dict(
-        pi=Bounds(0.0, 1.0), mu=Bounds(-5.0, 2.0), sigma=Bounds(1e-6, 3.0)
-    )
+    return {
+        "pi": Bounds(0.0, 1.0),
+        "mu": Bounds(-5.0, 2.0),
+        "sigma": Bounds(1e-6, 3.0),
+    }
 
 
 @pytest.fixture(scope="module")
@@ -45,8 +44,8 @@ def parameter_samples(parameter_bounds: dict[str, Bounds]) -> ParameterSamples:
 def beta_binomial_parameter_samples() -> ParameterSamples:
     """Get beta-binomial parameter samples test fixture."""
     return ParameterSamples.random_initialization(
-        bounds=dict(p=(0.0, 1.0)),
-        shapes=dict(p=(1,)),
+        bounds={"p": (0.0, 1.0)},
+        shapes={"p": (1,)},
         num_samples=2**13,
         seed=123456,
     )
@@ -96,8 +95,8 @@ def test_parameter_samples_shapes(
     """Test that multi-dimension parameters produce correct shapes."""
     num_samples = 8
     psamples = ParameterSamples.random_initialization(
-        bounds=dict(a=(0.0, 1.0), b=(0.0, 1.0)),
-        shapes=dict(a=a_shape, b=b_shape),
+        bounds={"a": (0.0, 1.0), "b": (0.0, 1.0)},
+        shapes={"a": a_shape, "b": b_shape},
         num_samples=num_samples,
     )
 

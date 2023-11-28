@@ -1,6 +1,7 @@
 """Utility classes and functions."""
+from collections.abc import Iterable, Sequence
 from string import ascii_uppercase
-from typing import Any, Iterable, NamedTuple, Sequence
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -8,7 +9,6 @@ import torch
 from numpy.typing import NDArray
 from scipy.stats import wasserstein_distance
 from torch import Tensor
-
 
 __all__ = [
     "Bounds",
@@ -149,8 +149,7 @@ def get_auto_corr(
 
 
 def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
-    """Get the cumulative probability estimate for a set of values given a \
-        distribution of samples.
+    """Get the cumulative probability estimate for a set of values given a distribution of samples.
 
     Parameters
     ----------
@@ -169,7 +168,7 @@ def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
     >>> _ = torch.manual_seed(1234)
     >>> get_cumulative_prob(torch.randn(10_000), values=torch.tensor([-2., 2.]))
     tensor([0.0242, 0.9764])
-    """
+    """ # noqa: E501
     samples = torch.atleast_1d(samples)
     values = torch.atleast_1d(values)
     if samples.shape[:-1] != values.shape[:-1]:
@@ -185,7 +184,7 @@ def get_cumulative_prob(samples: Tensor, values: Tensor) -> Tensor:
 def get_effective_sample_size(
     chain: NDArray[Any], lags: int, burn_in_frac: float = 0.5
 ) -> float:
-    """Estimate the effective sample size based on auto-correlation of MCMC samples.
+    """Estimate effective sample size from auto-correlation of MCMC samples.
 
     Parameters
     ----------
@@ -241,16 +240,18 @@ def get_gelman_rubin_diagnostic(
     Notes
     -----
     - The Gelman-Rubin convergence diagnostic provides a numerical convergence
-    statistic (scale reduction factor) based on the comparison of multiple MCMC chains.
+    statistic (scale reduction factor) based on the comparison of multiple 
+    MCMC chains.
     - If we were to start multiple parallel chains in many different starting
     values, the theory claims that they should all eventually converge to the
     stationary distribution.
     - One way to assess this is to compare the variation between chains to the
-    variation within the chains: `R ~ Between chain variance / within chain variance`
+    variation within the chains: `R ~ Between chain variance / within 
+    chain variance`
     - Brooks and Gelman (1998) suggest that diagnostic values greater than 1.2
     for any of the model parameters indicate nonconvergence.
-    - In practice, a more stringent rule of `R < 1.1` is often used to declare \
-        convergence.
+    - In practice, a more stringent rule of `R < 1.1` is often used to declare 
+    convergence.
     """
     # M Chains of length N
     chains = np.array(chains)
@@ -359,14 +360,14 @@ def get_highest_density_interval(
     rhs = np.take_along_axis(x, rhs_idxs[None, min_interval_idxs], axis=0)
 
     credible_intervals = np.vstack((lhs, rhs)).T
-    assert credible_intervals.shape == (shape[axis], 2)
+
     return credible_intervals
 
 
 def get_invgamma_params(
     variance_prior: float, effective_sample_size: int
 ) -> dict[str, float]:
-    """Get the invgamma parameters to use as the prior distribution for ~N variance.
+    """Get parameters to use as the prior distribution for ~N variance.
 
     Parameters
     ----------
@@ -381,10 +382,10 @@ def get_invgamma_params(
         alpha: float
         beta: float
     """
-    return dict(
-        alpha=effective_sample_size / 2.0,
-        beta=variance_prior * effective_sample_size / 2.0,
-    )
+    return {
+        'alpha': effective_sample_size / 2.0,
+        'beta': variance_prior * effective_sample_size / 2.0,
+    }
 
 
 def get_quantile_diffs(
@@ -394,8 +395,8 @@ def get_quantile_diffs(
 ) -> Tensor:
     """Get the ABS difference between quantiles of two sample distributions.
 
-    For example, if the 5% quantile value on A is the 8% value on B, there is a 3%
-    difference for A's 5% quantile.
+    For example, if the 5% quantile value on A is the 8% value on B, there 
+    is a 3% difference for A's 5% quantile.
 
     Parameters
     ----------
@@ -440,7 +441,8 @@ def get_rolling_windows(
 
     Returns
     -------
-    windows: NDArray[Any], shape=((N - window_size) // stride + 1, window_size, ...)
+    windows: NDArray[Any]
+        shape=((N - window_size) // stride + 1, window_size, ...)
         Rolling windows from input.
 
     Examples
@@ -472,7 +474,7 @@ def get_rolling_windows(
     (11, 6, 5)
     """
     shape = (arr.shape[0] - window_size + 1, window_size) + arr.shape[1:]
-    strides = (arr.strides[0],) + arr.strides
+    strides = (arr.strides[0], *arr.strides)
     rolled = np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
     return rolled[np.arange(0, shape[0], stride)]
 
@@ -555,7 +557,7 @@ def get_wasserstein_distance(a: Tensor, b: Tensor) -> Tensor:
     distance = torch.tensor(
         data=[
             wasserstein_distance(ai.cpu(), bi.cpu())
-            for ai, bi in zip(a_norm, b_norm)
+            for ai, bi in zip(a_norm, b_norm, strict=True)
         ],
         device=a.device,
         dtype=a.dtype,
@@ -571,9 +573,9 @@ def iqr(
     x: Tensor, dim: int | None = None, q1: float = 0.25, q3: float = 0.75
 ) -> Tensor:
     """Calculate interquartile range (IQR)."""
-    q1 = torch.quantile(x, q=q1, dim=dim)
-    q3 = torch.quantile(x, q=q3, dim=dim)
-    return q3 - q1
+    q1v = torch.quantile(x, q=q1, dim=dim)
+    q3v = torch.quantile(x, q=q3, dim=dim)
+    return q3v - q1v
 
 
 def one_hot_encode(
@@ -595,10 +597,7 @@ def one_hot_encode(
         One-hot-encoded variable with M levels.
     """
     if var_name is None:
-        if isinstance(x, pd.Series):
-            var_name = x.name
-        else:
-            var_name = ""
+        var_name = x.name if isinstance(x, pd.Series) else ""
 
     if isinstance(x, pd.Series):
         x = x.values

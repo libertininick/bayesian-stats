@@ -5,10 +5,10 @@ over `N` iterations, so at the end of the iterations you have `S` samples
 approximating the posterior distribution.
 """
 import math
-from collections.abc import KeysView, Mapping
+from collections.abc import Callable, Iterable, KeysView, Mapping
 from dataclasses import dataclass
 from itertools import accumulate, chain
-from typing import Callable, Iterable, ParamSpec
+from typing import ParamSpec
 
 import pandas as pd
 import pyro.distributions as dist
@@ -21,7 +21,6 @@ from bayesian_stats.utils import (
     get_spearman_corrcoef,
     get_wasserstein_distance,
 )
-
 
 P = ParamSpec("P")
 
@@ -97,6 +96,7 @@ class ParameterSamples(Mapping):
             for (param, numel), stop in zip(
                 self.num_parameter_elements.items(),
                 accumulate(self.num_parameter_elements.values()),
+                strict=True
             )
         }
 
@@ -201,9 +201,10 @@ class ParameterSamples(Mapping):
         return log_prob
 
     def proposal_distribution(self) -> dist.Normal:
-        """Get a normal proposal distribution centered at each parameter \
-            sample with scale equal to the standard deviation of each \
-            parameter's samples.
+        """Get a normal proposal distribution for each parameter sample.
+        
+        Distributions are centered at each parameter sample with scale 
+        equal to the standard deviation of each parameter's samples.
 
         As the sampling distribution of each parameter evolves, the standard
         deviation may shrink, thus annealing the sample movement from iteration
@@ -335,8 +336,7 @@ def initialize_samples(
     dtype: torch.dtype | None = torch.float32,
     seed: int | None = None,
 ) -> Tensor:
-    """Randomly initialize samples for each parameter using scrambled \
-        Sobol sequences.
+    """Initialize samples for each parameter using scrambled Sobol sequences.
 
     Parameters
     ----------
@@ -370,7 +370,7 @@ def initialize_samples(
         raise ValueError(f"{num_samples} is not a power of 2")
 
     # Unpack lower and upper bounds
-    l_bounds, u_bounds = zip(*bounds)
+    l_bounds, u_bounds = zip(*bounds, strict=True)
 
     # Draw scrambled Sobol samples
     sampler = qmc.Sobol(d=len(l_bounds), scramble=True, seed=seed)

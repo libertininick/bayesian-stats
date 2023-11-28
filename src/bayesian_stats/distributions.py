@@ -1,12 +1,13 @@
 """Extension of PyTorch and Pyro parameterizable probability distributions."""
+from collections.abc import Callable
 from enum import StrEnum
-from typing import Callable, NamedTuple
+from typing import ClassVar, NamedTuple
 
-import torch
 import pyro.distributions as dist
+import torch
 from einops import rearrange
-from torch.distributions import constraints
 from torch import Tensor
+from torch.distributions import constraints
 
 from bayesian_stats.utils import Bounds, encode_shape, iqr
 
@@ -41,7 +42,9 @@ class DistributionShapes(NamedTuple):
     @property
     def shape(self) -> torch.Size:
         """Get combined shape of `sample`, `batch` and `event` dimensions."""
-        return self.sample_shape + self.batch_shape + self.event_shape
+        return torch.Size(
+            self.sample_shape + self.batch_shape + self.event_shape
+        )
 
     def numel(self) -> int:
         """Get number of elements implied by shape."""
@@ -56,8 +59,7 @@ class DistributionShapes(NamedTuple):
         batch_shape: torch.Size | None = None,
         event_shape: torch.Size | None = None,
     ) -> "DistributionShapes":
-        """Factor the shape of samples from a distribution into `sample`, \
-            `batch`, and `event` components.
+        """Factor the shape of samples into (sample, batch, event) components.
 
         Parameters
         ----------
@@ -132,8 +134,8 @@ class Kernel(StrEnum):
 class KDEDistribution(dist.TorchDistribution):
     """Kernel density estimated (KDE) distribution from sample data."""
 
-    arg_constraints = {}
-    has_enumerate_support = True
+    arg_constraints: ClassVar[dict] = {}
+    has_enumerate_support: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -197,7 +199,9 @@ class KDEDistribution(dist.TorchDistribution):
             validate_args=validate_args,
         )
         self.num_samples: int = sample_shape.numel()
-        self.ex_samples_shape: torch.Size = batch_shape + event_shape
+        self.ex_samples_shape: torch.Size = torch.Size(
+            batch_shape + event_shape
+        )
         self.bounds = Bounds(*bounds)
         self.lower_bound = torch.full(
             size=self.ex_samples_shape,
@@ -226,7 +230,7 @@ class KDEDistribution(dist.TorchDistribution):
         """Get string representation."""
         return f"{self.__class__.__name__}()"
 
-    def sample(self, sample_shape: torch.Size = torch.Size([])) -> Tensor:
+    def sample(self, sample_shape: torch.Size) -> Tensor:
         """Get `sample_shape` randomly selected samples from distribution.
 
         Parameters
@@ -282,15 +286,19 @@ class KDEDistribution(dist.TorchDistribution):
             else self._log_prob_est(value)
         )
 
-    def to(self, *args, **kwargs) -> "KDEDistribution":
+    def to(self, *args, **kwargs) -> "KDEDistribution":  # type: ignore
         """Perform dtype and/or device conversion for Tensor properties."""
-        self.bandwidth = self.bandwidth.to(*args, **kwargs)
+        self.bandwidth: Tensor = self.bandwidth.to(*args, **kwargs)
         self.samples = self.samples.to(*args, **kwargs)
         self.lower_bound = self.lower_bound.to(*args, **kwargs)
         self.upper_bound = self.upper_bound.to(*args, **kwargs)
         self.sample_density = self.samples.to(*args, **kwargs)
-        self.lower_bound_density = self.lower_bound_density.to(*args, **kwargs)
-        self.upper_bound_density = self.upper_bound_density.to(*args, **kwargs)
+        self.lower_bound_density: Tensor = self.lower_bound_density.to(
+            *args, **kwargs
+        )
+        self.upper_bound_density: Tensor = self.upper_bound_density.to(
+            *args, **kwargs
+        )
         return self
 
     def _init_sample_density(
@@ -431,8 +439,7 @@ def get_bandwidth(
     sample_std: Tensor,
     sample_iqr: Tensor,
 ) -> Tensor:
-    """Use Silverman's rule of thumb to estimate bandwidth for kernel \
-        density estimation.
+    """Use rule of thumb to estimate bandwidth for kernel density estimation.
 
     Parameters
     ----------
